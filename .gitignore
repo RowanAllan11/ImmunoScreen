@@ -38,3 +38,12 @@ data/output/*
 
 # Misc
 *.tmp
+
+# Pipeline outputs (HPC + local)
+data/output/**
+
+# PBS / job logs
+hpc/logs/**
+logs/**
+*.o
+*.e

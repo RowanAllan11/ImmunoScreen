@@ -5,7 +5,7 @@
 #PBS -o hpc/logs/01_fragment.o
 #PBS -e hpc/logs/01_fragment.e
 
-cd /general/user/rma25/projects/hda_25-26/live/TDS/rowzang/final_project/aav-tcr-epitope-pipeline
+cd "$PBS_O_WORKDIR"
 
 mkdir -p hpc/logs data/output/fragmentation
 
