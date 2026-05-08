@@ -14,7 +14,7 @@ def main() -> int:
     out_dir = Path("data/output/fragmentation")
     out_prefix = "AAV9_VP1"  # or None to use fasta stem automatically
 
-    for k in (13, 15, 17):
+    for k in (8, 9, 10, 11, 13, 15, 17):
         tsv_path, txt_path = write_fragment_outputs(
             fasta_path=fasta_path,
             k=k,
