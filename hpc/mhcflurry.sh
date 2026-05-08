@@ -12,11 +12,12 @@ mkdir -p hpc/logs data/output/fragmentation data/output/mhcflurry
 eval "$(~/anaconda3/bin/conda shell.bash hook)"
 source activate AAV
 
-export MHCFLURRY_DATA_DIR="/general/project/hda_25-26/live/TDS/rowzang/final_project/mhcflurry"
+export MHCFLURRY_DATA_DIR="/rds/general/project/hda_25-26/live/TDS/rowzang/final_project/mhcflurry"
 mkdir -p "$MHCFLURRY_DATA_DIR"
 
+echo "PWD=$(pwd)"
 echo "MHCFLURRY_DATA_DIR=$MHCFLURRY_DATA_DIR"
 mhcflurry-downloads path || true
-which mhcflurry-predict
+
 
 python scripts/run_mhcflurry.py
