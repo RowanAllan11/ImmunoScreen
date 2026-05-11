@@ -53,14 +53,13 @@ def _write_peptide_allele_input(fragment_tsv: Path, allele: str, out_csv: Path) 
     return n
 
 
+# Specify kmers and alleles to run mhcflurry-predict on for each fragmentation TSV.
 def main() -> int:
     fragment_dir = REPO_ROOT / "data/output/fragmentation"
     out_dir = REPO_ROOT / "data/output/mhcflurry"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     kmers = (8, 9, 10, 11)
-
-    # NOTE: mhcflurry is mainly HLA; mouse H-2 alleles may not be supported.
     alleles = ["H2-D*b", "H2-D*d"]
 
     mhcflurry_predict = _require_exe("mhcflurry-predict")
