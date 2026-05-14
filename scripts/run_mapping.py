@@ -32,7 +32,7 @@ from src.visualize_mhc_heatmap import render_heatmap_from_dir  # noqa: E402
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--k-min", type=int, default=8)
-    ap.add_argument("--k-max", type=int, default=11)
+    ap.add_argument("--k-max", type=int, default=15)
     ap.add_argument("--out-dir", default="data/output/mhcflurry_position_scores")
 
     # Optional plotting step (off by default)

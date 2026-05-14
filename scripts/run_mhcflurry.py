@@ -59,8 +59,8 @@ def main() -> int:
     out_dir = REPO_ROOT / "data/output/mhcflurry"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    kmers = (8, 9, 10, 11)
-    alleles = ["H2-D*b", "H2-D*d"]
+    kmers = (8, 9, 10, 11, 12, 13, 14, 15)
+    alleles = ["H2-D*b", "H2-D*d", "H2-K*b", "H2-K*d", "H2-K*k", "H2-K*q", "H2-L*d", "H2-L*q"]
 
     mhcflurry_predict = _require_exe("mhcflurry-predict")
 

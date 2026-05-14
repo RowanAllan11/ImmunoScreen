@@ -53,7 +53,7 @@ def load_mhcflurry_rows(path: str) -> List[dict]:
     if not rows:
         raise ValueError(f"No rows in mhcflurry TSV: {path}")
 
-    required = {"peptide", "allele", "mhcflurry_presentation_percentile"}
+    required = {"peptide", "allele", "mhcflurry_affinity_percentile"}
     missing = required - set(rows[0].keys())
     if missing:
         raise ValueError(f"Missing columns {sorted(missing)} in mhcflurry TSV: {path}")
@@ -64,7 +64,7 @@ def load_mhcflurry_rows(path: str) -> List[dict]:
 def mhcflurry_row_to_fields(row: dict) -> Tuple[str, str, float]:
     pep = row["peptide"]
     allele = row["allele"]
-    pct = float(row["mhcflurry_presentation_percentile"])
+    pct = float(row["mhcflurry_affinity_percentile"])
     return pep, allele, pct
 
 

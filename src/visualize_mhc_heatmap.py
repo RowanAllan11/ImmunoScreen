@@ -107,7 +107,7 @@ def plot_heatmap(
     plt.title(title, fontsize=18, pad=15)
 
     cbar = plt.colorbar(im, fraction=0.025, pad=0.03)
-    cbar.set_label("Max log presentation score", fontsize=13)
+    cbar.set_label("Max log Affinity score", fontsize=13)
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
