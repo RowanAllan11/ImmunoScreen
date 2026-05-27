@@ -6,13 +6,12 @@ import glob
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Optional, Set, Tuple
 
-# Ensure repo root is on sys.path so `import src...` works when running this script directly.
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.mhcflurry_pos_mapping import (  # noqa: E402
+from src.mhcflurry_pos_mapping import (
     coords_to_sequence,
     infer_protein_from_fragmentation_path,
     infer_protein_from_mhcflurry_path,
@@ -20,20 +19,33 @@ from src.mhcflurry_pos_mapping import (  # noqa: E402
     load_mhcflurry_rows,
     map_scores_to_positions_max,
     write_position_scores_tsv,
+    infer_allele_from_mhcflurry_filename,
+    _parse_allele_filter
 )
-from src.visualize_mhc_heatmap import render_heatmap_from_dir  # noqa: E402
+from src.visualize_mhc_heatmap import render_heatmap_from_dir 
 
 # How to call
-# 1. Run mapping only - python3 scripts/run_mapping.py
-# 2. Run mapping + plotting for all proteins - python3 scripts/run_mapping.py --plot
-# 3. Run mapping + plotting for one protein - python3 scripts/run_mapping.py --plot --plot-protein AAV9_VP1
-
+# 1. Run mapping only - python3 scripts/run_mapping.py --alleles-file data/input/alleles.txt
+# 2. Run mapping + plotting for all proteins - python3 scripts/run_mapping.py --alleles-file data/input/alleles.txt --plot
+# 3. Run mapping + plotting for one protein - python3 scripts/run_mapping.py --alleles-file data/input/alleles.txt --plot --plot-protein AAV9_VP1
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--k-min", type=int, default=8)
     ap.add_argument("--k-max", type=int, default=15)
     ap.add_argument("--out-dir", default="data/output/mhcflurry_position_scores")
+
+    # NEW: allele filtering (optional)
+    ap.add_argument(
+        "--alleles",
+        default=None,
+        help="Comma-separated allele names to include (matches filename allele part exactly). Example: 'HLA-A*02:01,HLA-A*11:01'",
+    )
+    ap.add_argument(
+        "--alleles-file",
+        default=None,
+        help="Path to text file with one allele per line (lines starting with # ignored).",
+    )
 
     # Optional plotting step (off by default)
     ap.add_argument("--plot", action="store_true", help="Generate heatmap PNG(s) from the output TSVs")
@@ -43,6 +55,7 @@ def main() -> None:
     ap.add_argument("--plot-vmax", type=float, default=None)
 
     args = ap.parse_args()
+    allele_filter = _parse_allele_filter(args)
 
     # Load and merge fragmentation coords across k for each protein
     coords_by_protein: Dict[str, dict] = {}
@@ -62,6 +75,14 @@ def main() -> None:
 
     for k in range(args.k_min, args.k_max + 1):
         for mp in sorted(glob.glob(f"data/output/mhcflurry/*_{k}mer.*.mhcflurry.tsv")):
+            try:
+                allele = infer_allele_from_mhcflurry_filename(mp)
+            except ValueError:
+                continue
+
+            if allele_filter is not None and allele not in allele_filter:
+                continue
+
             protein = infer_protein_from_mhcflurry_path(mp)
             coords = coords_by_protein.get(protein)
             if coords is None:
@@ -70,8 +91,13 @@ def main() -> None:
             rows = load_mhcflurry_rows(mp)
             mapped = map_scores_to_positions_max(coords, rows)
 
-            for (allele, pos_0), score in mapped.items():
-                key = (protein, allele, pos_0)
+            for (allele_from_rows, pos_0), score in mapped.items():
+                # Prefer allele from rows if present; but keep filename allele as key if mismatch
+                use_allele = allele_from_rows or allele
+                if allele_filter is not None and use_allele not in allele_filter:
+                    continue
+
+                key = (protein, use_allele, pos_0)
                 prev = acc.get(key)
                 if prev is None or score > prev:
                     acc[key] = score

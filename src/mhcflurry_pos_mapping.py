@@ -4,8 +4,9 @@ import csv
 import math
 import os
 import re
+from pathlib import Path
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple, Set
 
 
 @dataclass(frozen=True)
@@ -155,3 +156,40 @@ def write_position_scores_tsv(
             if sequence is not None and 0 <= pos_0 < len(sequence):
                 aa = sequence[pos_0]
             w.writerow([protein, allele, pos_0, aa, f"{score:.6g}"])
+
+
+def _parse_allele_filter(args: argparse.Namespace) -> Optional[Set[str]]:
+    alleles: Set[str] = set()
+
+    if args.alleles:
+        for a in str(args.alleles).split(","):
+            a = a.strip()
+            if a:
+                alleles.add(a)
+
+    if args.alleles_file:
+        p = Path(args.alleles_file)
+        if not p.exists():
+            raise SystemExit(f"--alleles-file not found: {p}")
+        for line in p.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            alleles.add(line)
+
+    return alleles if alleles else None
+
+
+def infer_allele_from_mhcflurry_filename(path: str) -> str:
+    """
+    Expected filename pattern:
+      data/output/mhcflurry/<protein>_<k>mer.<allele>.mhcflurry.tsv
+    """
+    name = Path(path).name
+    if not name.endswith(".mhcflurry.tsv"):
+        raise ValueError(f"Not a mhcflurry TSV: {path}")
+    core = name[: -len(".mhcflurry.tsv")]  # "<protein>_<k>mer.<allele>"
+    parts = core.split(".")
+    if len(parts) < 2:
+        raise ValueError(f"Cannot infer allele from filename: {path}")
+    return parts[-1]

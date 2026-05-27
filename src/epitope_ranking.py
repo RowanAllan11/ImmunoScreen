@@ -130,6 +130,7 @@ def rank_mhcflurry_epitopes(
     top_n_per_allele_protein: int = 0,
     dedupe_greedy: bool = False,
     dedupe_min_overlap_aa: int = 1,
+    allele_filter: Optional[Set[str]] = None,  # NEW
 ) -> List[RankedEpitope]:
     kmers = tuple(int(k) for k in kmers)
     mhc_paths = discover_mhcflurry_tsvs(mhcflurry_dir, kmers)
@@ -141,7 +142,6 @@ def rank_mhcflurry_epitopes(
     affinity_keys = ["mhcflurry_affinity_percentile", "affinity_percentile"]
     presentation_keys = ["mhcflurry_presentation_percentile", "presentation_percentile"]
 
-    # Collect candidates per (allele, protein) so we can compute supporting_kmers within the same group.
     candidates_by_group: Dict[Tuple[str, str], List[RankedEpitope]] = {}
 
     for mhc_tsv in mhc_paths:
@@ -159,6 +159,10 @@ def rank_mhcflurry_epitopes(
             pep = (row.get("peptide") or "").strip()
             allele = (row.get("allele") or "").strip()
             if not pep or not allele:
+                continue
+
+            # NEW: allele filtering
+            if allele_filter is not None and allele not in allele_filter:
                 continue
 
             affinity_pct = _pick_pct(row, affinity_keys)
@@ -189,7 +193,7 @@ def rank_mhcflurry_epitopes(
                     length=length,
                     affinity_percentile=float(affinity_pct),
                     presentation_percentile=float(presentation_pct) if presentation_pct is not None else None,
-                    supporting_kmers=0,  # filled later
+                    supporting_kmers=0,
                 )
             )
 

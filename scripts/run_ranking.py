@@ -4,24 +4,46 @@ import argparse
 import csv
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.epitope_ranking import rank_mhcflurry_epitopes, rank_score  # noqa: E402
 
+'''
 # How to run:
-# python3 scripts/run_ranking.py \
-#   --affinity-threshold 2 \
-#   --kmers 8,9,10,11,12,13,14,15 \
-#   --dedupe-greedy \
-#   --dedupe-min-overlap-aa 1 \
-#   --out data/output/epitopes/mhcflurry_epitopes.tsv
-
+python3 scripts/run_ranking.py \
+   --affinity-threshold 2 \
+   --alleles-file data/input/alleles.txt \
+   --dedupe-greedy \
+   --out data/output/epitopes/mhcflurry_epitopes_all.tsv
+'''
 
 def _parse_kmers(s: str) -> List[int]:
     return [int(x) for x in s.split(",") if x.strip()]
+
+
+def _parse_allele_filter(args: argparse.Namespace) -> Optional[Set[str]]:
+    alleles: Set[str] = set()
+
+    if args.alleles:
+        for a in str(args.alleles).split(","):
+            a = a.strip()
+            if a:
+                alleles.add(a)
+
+    if args.alleles_file:
+        p = Path(args.alleles_file)
+        if not p.exists():
+            raise SystemExit(f"--alleles-file not found: {p}")
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            alleles.add(line)
+
+    return alleles if alleles else None
 
 
 def main() -> int:
@@ -50,7 +72,20 @@ def main() -> int:
         help="Overlap (in aa) that counts as redundant. 1 means any shared residue.",
     )
 
+    # NEW: allele filtering (optional)
+    ap.add_argument(
+        "--alleles",
+        default=None,
+        help="Comma-separated allele names to include (must match TSV 'allele' exactly). Example: 'HLA-A*02:01,HLA-A*11:01'",
+    )
+    ap.add_argument(
+        "--alleles-file",
+        default=None,
+        help="Path to text file with one allele per line (lines starting with # ignored).",
+    )
+
     args = ap.parse_args()
+    allele_filter = _parse_allele_filter(args)
 
     epitopes = rank_mhcflurry_epitopes(
         fragment_dir=Path(args.fragment_dir),
@@ -60,6 +95,7 @@ def main() -> int:
         top_n_per_allele_protein=int(args.top_n_per_allele_protein),
         dedupe_greedy=bool(args.dedupe_greedy),
         dedupe_min_overlap_aa=int(args.dedupe_min_overlap_aa),
+        allele_filter=allele_filter,  # NEW
     )
 
     out_path = Path(args.out)
