@@ -46,6 +46,9 @@ def read_fasta(path: Union[str, Path]) -> List[Tuple[str, str, str]]:
     return out
 
 
+
+
+
 def fragment_sequence(seq: str, k: int) -> Iterable[Tuple[int, str]]:
     """Yield (start_0_based, peptide) for every contiguous k-mer in seq."""
     if k <= 0:

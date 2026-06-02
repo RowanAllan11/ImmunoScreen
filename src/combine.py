@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Combine filtered NetMHCpan and MHCflurry outputs.
+Was effective for FASTA input
+
 
 Behavior:
 - Merge on (peptide, allele) after allele normalization
@@ -15,6 +17,13 @@ Output:
   {outdir}/{ST}_combined_netmhcpan_mhcflurry.tsv
 
 Includes a single 'length' column computed from peptide.
+
+python src/combine.py \
+  --st VR5_9mer \
+  --netmhcpan-file data/output/netmhcpan_filtered/VR5_9mer_netMHCpan.tsv \
+  --mhcflurry-file data/output/mhcflurry_filtered/vr5_9_MHCflurry.tsv \
+    --outdir data/output/combined
+
 """
 
 from __future__ import annotations
@@ -212,7 +221,7 @@ def main() -> None:
     combined = combined.sort_values(["allele", "peptide"], ascending=True, na_position="last")
 
     args.outdir.mkdir(parents=True, exist_ok=True)
-    out_path = args.outdir / f"{st}_combined_netmhcpan_mhcflurry.tsv"
+    out_path = args.outdir / f"{st}_combined.tsv"
     combined.to_csv(out_path, sep="\t", index=False)
 
     print(f"NetMHCpan input: {net_path}")

@@ -1,0 +1,66 @@
+# /net/urban/var/www/packages/netMHCpan/4.2/netMHCpan-4.2/Linux_x86_64/bin/netMHCpan-4.2 -pmhc -context test.pep_context_mhc
+# Wed Mar 18 21:43:47 2026
+# User: jonnil
+# PWD : /net/urban/var/www/packages/netMHCpan/4.2/netMHCpan-4.2/test
+# Host: Linux login3 6.8.0-101-generic x86_64
+# -pmhc    1                    Use peptide-MHC input
+# -context 1                    Predict with context encoding
+# Command line parameters set to:
+#	[-rdir filename]     /net/urban/var/www/packages/netMHCpan/4.2/netMHCpan-4.2/Linux_x86_64 Home directory for NetMHCpan
+#	[-syn filename]      /net/urban/var/www/packages/netMHCpan/4.2/netMHCpan-4.2/Linux_x86_64/data/synlist_nocontext.bin Synaps file
+#	[-v]                 0                    Verbose mode
+#	[-dirty]             0                    Dirty mode, leave tmp dir+files
+#	[-tdir filename]     /tmp/netMHCpan_XXXXXX Temporary directory
+#	[-hlapseudo filename] /net/urban/var/www/packages/netMHCpan/4.2/netMHCpan-4.2/Linux_x86_64/data/MHC_pseudo.dat File with HLA pseudo sequences
+#	[-hlaseq filename]                        File with full length MHC sequence
+#	[-pathogen]          0                    Include pathogen epitope predictions
+#	[-neo]               0                    Include neoepitope predictions
+#	[-context]           1                    Predict with context encoding
+#	[-a line]            HLA-A02:01           Allele for prediction (multiple alleles with ,)
+#	[-f filename]                             File with the input data
+#	[-w]                 0                    w option for webface
+#	[-s]                 0                    Sort output on descending affinity
+#	[-p]                 0                    Use peptide input
+#	[-pmhc]              1                    Use peptide-MHC input
+#	[-rankS float]       0.500000             Rank Threshold for Strong binders
+#	[-rankW float]       2.000000             Rank Threshold for Weak binders
+#	[-l filename]        9                    Peptide length (multiple length with ,) Used for FASTA input only.
+#	[-xls]               0                    Save output into xls file
+#	[-xlsfile filename]  NetMHCpan_out.xls    Filename for xls dump
+#	[-t float]           -99.900002           Threshold for output (%rank) [<0 print all]
+#	[-inptype int]       0                    Input type [0] FASTA [1] PEPTIDE [2] PEPTIDECONT [3] PEPTIDEMHC [4] PEPTIDECONTMHC
+#	[-termAcon]          0                    Encode context extending protein sequence as A [default is X]
+#	[-version filename]  /net/urban/var/www/packages/netMHCpan/4.2/netMHCpan-4.2/Linux_x86_64/data/version File with version information
+#	[-thrfmt filename]   /net/urban/var/www/packages/netMHCpan/4.2/netMHCpan-4.2/Linux_x86_64/data/threshold/%s.thr.%s Format for threshold filenames
+#	[-listMHC]           0                    Print list of alleles included in netMHCpan
+#	[-allname filename]  /net/urban/var/www/packages/netMHCpan/4.2/netMHCpan-4.2/Linux_x86_64/data/allelenames File with print names for alleles
+#	[-BA]                0                    Include Binding affinity prediction
+
+# NetMHCpan version 4.2c
+
+# Tmpdir made /tmp/netMHCpan_wYrzqy
+
+# Input is in PEPTIDECONTMHC format
+
+# Prediction Mode: EL with Context
+
+# Rank Threshold for Strong binder   0.500
+# Rank Threshold for Weak binder   2.000
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Pos            MHC           Peptide      Core Of Gp Gl Ip Il             Icore        Identity Score_EL %Rank_EL      Exp BindLevel
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+   1    HLA-B*07:09         RPSQRHGSK RPSQRHGSK  0  0  0  0  0         RPSQRHGSK         PEPLIST 0.277899    0.782  0.92782 <= WB
+   2    HLA-B*07:09         HGSKYLATA HGSKYLATA  0  0  0  0  0         HGSKYLATA         PEPLIST 0.008006   11.133  0.91446
+   3    HLA-A*02:01         DTGILDSIG DTGILDSIG  0  0  0  0  0         DTGILDSIG         PEPLIST 0.000002   81.329  0.91294
+   4    HLA-A*02:01         IGRFFGGDR IGRFFGGDR  0  0  0  0  0         IGRFFGGDR         PEPLIST 0.000010   63.662  0.91033
+   5    HLA-C*05:06         HGRTQDENP HGRTQDENP  0  0  0  0  0         HGRTQDENP         PEPLIST 0.000004   63.913  0.90721
+   6    HLA-C*05:06         NPVVHFFKN NPVVHFFKN  0  0  0  0  0         NPVVHFFKN         PEPLIST 0.000001   80.915  0.90186
+   7    HLA-C*05:06         PVVHFFKNI PVVHFFKNI  0  0  0  0  0         PVVHFFKNI         PEPLIST 0.000066   33.719  0.89514
+   8    HLA-A*01:01         IVTPRTPPP IVTPRTPPP  0  0  0  0  0         IVTPRTPPP         PEPLIST 0.000184   39.665  0.89484
+   9    HLA-A*01:01         GRKSAHKGF GRKSAHKGF  0  0  0  0  0         GRKSAHKGF         PEPLIST 0.000589   23.722  0.88868
+  10    HLA-A*24:02         GTLSKIFKL GTLSKIFKL  0  0  0  0  0         GTLSKIFKL         PEPLIST 0.052342    1.587  0.88708 <= WB
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Number of strong binders 0. Number of weak binders 2. Number of peptides 10
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------

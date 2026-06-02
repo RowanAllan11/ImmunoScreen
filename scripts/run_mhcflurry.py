@@ -1,14 +1,27 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Iterable, List
+
+import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
+
+
+def _read_alleles_file(path: Path) -> list[str]:
+    alleles: list[str] = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            alleles.append(s)
+    return alleles
 
 
 def _require_exe(name: str) -> str:
@@ -18,96 +31,105 @@ def _require_exe(name: str) -> str:
     return exe
 
 
-def _discover_fragment_tsvs(fragment_dir: Path, kmers: Iterable[int]) -> List[Path]:
-    files: List[Path] = []
-    for k in kmers:
-        files.extend(sorted(fragment_dir.glob(f"*_{k}mer.tsv")))
-    return files
-
-
-def _write_peptide_allele_input(fragment_tsv: Path, allele: str, out_csv: Path) -> int:
+def _write_unique_peptides_allele_input(unique_peptides_tsv: Path, alleles: list[str], out_csv: Path) -> int:
     """
-    Create a mhcflurry *CSV* input with columns: peptide, allele
-    from a fragmentation TSV (must contain a 'peptide' column).
-    Returns number of rows written.
+    Create mhcflurry input CSV (peptide, allele) from unique_peptides.tsv.
+
+    Expected columns:
+      peptide_id, peptide, k, occurrence_count
+
+    Returns number of (peptide, allele) rows written.
     """
+    if not alleles:
+        return 0
+
+    df = pd.read_csv(unique_peptides_tsv, sep="\t", dtype=str)
+    if "peptide" not in df.columns:
+        raise ValueError(f"unique_peptides.tsv missing 'peptide' column: {unique_peptides_tsv}")
+
+    peptides = df["peptide"].astype(str).str.strip()
+    peptides = peptides[peptides != ""].drop_duplicates().tolist()
+
+    out_csv.parent.mkdir(parents=True, exist_ok=True)
     n = 0
-    with fragment_tsv.open("r", encoding="utf-8", newline="") as fin, out_csv.open(
-        "w", encoding="utf-8", newline=""
-    ) as fout:
-        reader = csv.DictReader(fin, delimiter="\t")
-        if not reader.fieldnames or "peptide" not in reader.fieldnames:
-            raise ValueError(f"Input TSV missing 'peptide' column: {fragment_tsv}")
-
-        writer = csv.DictWriter(
-            fout, fieldnames=["peptide", "allele"], delimiter=",", lineterminator="\n"
-        )
+    with out_csv.open("w", encoding="utf-8", newline="") as fout:
+        writer = csv.DictWriter(fout, fieldnames=["peptide", "allele"], delimiter=",", lineterminator="\n")
         writer.writeheader()
-
-        for row in reader:
-            pep = (row.get("peptide") or "").strip()
-            if not pep:
-                continue
-            writer.writerow({"peptide": pep, "allele": allele})
-            n += 1
+        for pep in peptides:
+            for allele in alleles:
+                writer.writerow({"peptide": pep, "allele": allele})
+                n += 1
     return n
 
 
-# Specify kmers and alleles to run mhcflurry-predict on for each fragmentation TSV.
 def main() -> int:
-    fragment_dir = REPO_ROOT / "data/output/fragmentation"
-    out_dir = REPO_ROOT / "data/output/mhcflurry"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    ap = argparse.ArgumentParser(description="Run mhcflurry-predict on fragmented peptides.")
+    ap.add_argument(
+        "--unique-peptides",
+        type=Path,
+        required=True,
+        help="Path to unique_peptides.tsv from scripts/run_fragmentation.py --tabular",
+    )
+    ap.add_argument("--alleles", type=Path, required=True, help="Alleles .txt (one allele per line)")
+    ap.add_argument(
+        "--out-dir",
+        type=Path,
+        default=REPO_ROOT / "data/output/mhcflurry",
+        help="Output directory (default: data/output/mhcflurry)",
+    )
+    ap.add_argument(
+        "--tag",
+        type=str,
+        default=None,
+        help="Output tag/prefix for filenames (default: parent directory name of unique-peptides)",
+    )
+    args = ap.parse_args()
 
-    kmers = (8, 9, 10, 11, 12, 13, 14, 15)
-    alleles = ["HLA-A*01:01", "HLA-A*02:01",
-    "HLA-A*03:01",
-    "HLA-A*11:01",
-    "HLA-B*07:02",
-    "HLA-B*08:01",
-    "HLA-C*07:01",
-    "HLA-C*07:02"
-]
+    unique_peptides_tsv = args.unique_peptides
+    if not unique_peptides_tsv.exists():
+        raise FileNotFoundError(f"unique_peptides.tsv not found: {unique_peptides_tsv}")
 
+    alleles = _read_alleles_file(args.alleles)
     mhcflurry_predict = _require_exe("mhcflurry-predict")
 
-    inputs = _discover_fragment_tsvs(fragment_dir, kmers)
-    if not inputs:
-        raise FileNotFoundError(
-            f"No fragmentation TSVs found in {fragment_dir} for kmers {kmers}. "
-            "Run scripts/run_fragmentation.py first."
-        )
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    for frag_tsv in inputs:
-        for allele in alleles:
-            mhc_in = out_dir / f"{frag_tsv.stem}.{allele}.input.csv"
-            out_path = out_dir / f"{frag_tsv.stem}.{allele}.mhcflurry.tsv"
+    tag = args.tag or unique_peptides_tsv.parent.name
+    mhc_in = out_dir / f"{tag}.unique_peptides.input.csv"
+    out_path = out_dir / f"{tag}.unique_peptides.mhcflurry.tsv"
 
-            n = _write_peptide_allele_input(frag_tsv, allele, mhc_in)
-            if n == 0:
-                print(f"Skipping empty input for {frag_tsv} allele={allele}")
-                continue
+    n = _write_unique_peptides_allele_input(unique_peptides_tsv, alleles, mhc_in)
+    if n == 0:
+        raise RuntimeError(f"0 (peptide, allele) rows written from: {unique_peptides_tsv}")
 
-            cmd = [
-                mhcflurry_predict,
-                str(mhc_in),  # positional input file
-                "--allele-column",
-                "allele",
-                "--peptide-column",
-                "peptide",
-                "--out",
-                str(out_path),
-                "--output-delimiter",
-                "\t",
-                "--no-flanking",
-            ]
+    cmd = [
+        mhcflurry_predict,
+        str(mhc_in),
+        "--allele-column",
+        "allele",
+        "--peptide-column",
+        "peptide",
+        "--out",
+        str(out_path),
+        "--output-delimiter",
+        "\t",
+        "--no-flanking",
+    ]
 
-            print(f"Running: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True)
-            print(f"Wrote: {out_path}")
-
+    print(f"Running: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+    print(f"Wrote: {out_path}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+"""
+python scripts/run_mhcflurry.py \
+  --unique-peptides data/output/fragmentation/variants_vr5_9/unique_peptides.tsv \
+  --alleles data/input/alleles/mhcflurry/alleles_h2.txt \
+  --out-dir data/output/mhcflurry/VR5_9mer \
+  --tag VR5_v3_9mer
+"""

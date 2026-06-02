@@ -1,0 +1,70 @@
+# /tools/src/netMHCpan-4.2/Linux_x86_64/bin/netMHCpan-4.2 -hlaseq B0702.fsa -p test.pep
+# Tue Mar 24 18:29:00 2026
+# User: jonnil
+# PWD : /tools/src/netMHCpan-4.2/test
+# Host: Linux engine 6.8.0-101-generic x86_64
+# -hlaseq  B0702.fsa            File with full length MHC sequence
+# -p       1                    Use peptide input
+# Command line parameters set to:
+#	[-rdir filename]     /tools/src/netMHCpan-4.2/Linux_x86_64 Home directory for NetMHCpan
+#	[-syn filename]      /tools/src/netMHCpan-4.2/Linux_x86_64/data/synlist_nocontext.bin Synaps file
+#	[-v]                 0                    Verbose mode
+#	[-dirty]             0                    Dirty mode, leave tmp dir+files
+#	[-tdir filename]     /var/www/services/services/NetMHCpan-4.2/tmp/netMHCpan_XXXXXX Temporary directory
+#	[-hlapseudo filename] /tools/src/netMHCpan-4.2/Linux_x86_64/data/MHC_pseudo.dat File with HLA pseudo sequences
+#	[-hlaseq filename]   B0702.fsa            File with full length MHC sequence
+#	[-pathogen]          0                    Include pathogen epitope predictions
+#	[-neo]               0                    Include neoepitope predictions
+#	[-context]           0                    Predict with context encoding
+#	[-a line]            HLA-A02:01           Allele for prediction (multiple alleles with ,)
+#	[-f filename]                             File with the input data
+#	[-w]                 0                    w option for webface
+#	[-s]                 0                    Sort output on descending affinity
+#	[-p]                 1                    Use peptide input
+#	[-pmhc]              0                    Use peptide-MHC input
+#	[-rankS float]       0.500000             Rank Threshold for Strong binders
+#	[-rankW float]       2.000000             Rank Threshold for Weak binders
+#	[-l filename]        9                    Peptide length (multiple length with ,) Used for FASTA input only.
+#	[-xls]               0                    Save output into xls file
+#	[-xlsfile filename]  NetMHCpan_out.xls    Filename for xls dump
+#	[-t float]           -99.900002           Threshold for output (%rank) [<0 print all]
+#	[-inptype int]       0                    Input type [0] FASTA [1] PEPTIDE [2] PEPTIDECONT [3] PEPTIDEMHC [4] PEPTIDECONTMHC
+#	[-termAcon]          0                    Encode context extending protein sequence as A [default is X]
+#	[-version filename]  /tools/src/netMHCpan-4.2/Linux_x86_64/data/version File with version information
+#	[-thrfmt filename]   /tools/src/netMHCpan-4.2/Linux_x86_64/data/threshold/%s.thr.%s Format for threshold filenames
+#	[-listMHC]           0                    Print list of alleles included in netMHCpan
+#	[-allname filename]  /tools/src/netMHCpan-4.2/Linux_x86_64/data/allelenames File with print names for alleles
+#	[-BA]                0                    Include Binding affinity prediction
+
+# NetMHCpan version 4.2c
+
+# Tmpdir made /var/www/services/services/NetMHCpan-4.2/tmp/netMHCpan_YY6V3T
+
+# Input is in PEPTIDE format
+# Use user MHC pseudo sequence YYSEYRNIYAQTDESNLYLSYDYYTWAERAYEWY USER_DEF
+
+# Prediction Mode: EL
+
+# USER_DEF : Distance to training data  0.000 (using nearest neighbor HLA-B07:02)
+
+# Allele: USER_DEF
+# Rank Threshold for Strong binder   0.500
+# Rank Threshold for Weak binder   2.000
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Pos            MHC           Peptide      Core Of Gp Gl Ip Il             Icore        Identity Score_EL %Rank_EL      Exp BindLevel
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+   1       USER_DEF         AAAWYLWEV AAAWYLWEV  0  0  0  0  0         AAAWYLWEV         PEPLIST 0.000667   16.156  0.74258
+   2       USER_DEF         AAGLQDCTM AAGLQDCTM  0  0  0  0  0         AAGLQDCTM         PEPLIST 0.001358   11.826  0.00000
+   3       USER_DEF         AARNIVRRA AARNIVRRA  0  0  0  0  0         AARNIVRRA         PEPLIST 0.029183    2.756  0.00000
+   4       USER_DEF         AARPDDPTL AARPDDPTL  0  0  0  0  0         AARPDDPTL         PEPLIST 0.484452    0.365  0.14875 <= SB
+   5       USER_DEF         AASCGGAVF AASCGGAVF  0  0  0  0  0         AASCGGAVF         PEPLIST 0.016004    3.673  0.14922
+   6       USER_DEF         AASKQQMLM AASKQQMLM  0  0  0  0  0         AASKQQMLM         PEPLIST 0.026104    2.902  0.00000
+   7       USER_DEF         AASSTHRKV AASSTHRKV  0  0  0  0  0         AASSTHRKV         PEPLIST 0.016231    3.646  0.27167
+   8       USER_DEF         AEALLADGL AEALLADGL  0  0  0  0  0         AEALLADGL         PEPLIST 0.000980   13.710  0.08469
+   9       USER_DEF         AEESLSLEA AEESLSLEA  0  0  0  0  0         AEESLSLEA         PEPLIST 0.000312   22.187  0.00000
+  10       USER_DEF         AEFGPWQTV AEFGPWQTV  0  0  0  0  0         AEFGPWQTV         PEPLIST 0.004102    7.059  0.31562
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Protein PEPLIST. Allele USER_DEF. Number of strong binders 1. Number of weak binders 0. Number of peptides 10
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------

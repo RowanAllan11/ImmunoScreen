@@ -27,7 +27,7 @@ Overlap definition:
 Example:
   python src/variable_region_output.py \
     --st AAV9 \
-    -i data/output/combined/AAV9_combined_netmhcpan_mhcflurry.tsv \
+    -i data/output/combined/AAV9_combined.tsv \
     -o data/output/combined
 """
 

@@ -1,0 +1,8 @@
+../netMHCpan -p test.pep > test.pep.out
+../netMHCpan -p -context test.pep_context > test.pep_context.out
+../netMHCpan -pmhc test.pep_mhc > test.pep_mhc.out
+../netMHCpan -pmhc -context test.pep_context_mhc > test.pep_context_mhc.out
+../netMHCpan -p test.pep -BA > test.pep_wBA.out
+../netMHCpan test.fsa > test.fsa.out
+../netMHCpan -hlaseq B0702.fsa -p test.pep > test.pep_userMHC.out
+../netMHCpan -p test.pep -BA -xls -a HLA-A01:01,HLA-A02:01 -xlsfile NetMHCpan_out.xls
