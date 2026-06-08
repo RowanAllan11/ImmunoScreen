@@ -1,137 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import pandas as pd
+import sys
 from pathlib import Path
 
-import pandas as pd
+REPO_ROOT = Path(__file__).resolve().parents[1]
+# make repo and src importable
+sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
-
-def parse_netmhcpan_xls_wide_tsv(path: Path) -> pd.DataFrame:
-    """
-    Parse NetMHCpan -xls output (tab-delimited "wide" table) into tidy/long df with:
-      peptide, k, allele, netMHCpan_EL_score, netMHCpan_EL_rank, (optional BA_score, BA_rank)
-    """
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-
-    header_idx = None
-    for i, line in enumerate(lines):
-        if line.startswith("Pos\tPeptide\tID\t"):
-            header_idx = i
-            break
-    if header_idx is None:
-        raise ValueError(f"Could not find NetMHCpan xls header in: {path}")
-
-    allele_line = lines[header_idx - 1]
-    allele_cells = allele_line.split("\t")
-
-    col_header = lines[header_idx].split("\t")
-    base_cols = ["Pos", "Peptide", "ID"]
-    if col_header[: len(base_cols)] != base_cols:
-        raise ValueError(
-            "Unexpected NetMHCpan xls columns. "
-            f"Expected prefix {base_cols}, got {col_header[:len(base_cols)]}"
-        )
-
-    header_tail = col_header[len(base_cols) :]
-    has_ba = "BA_score" in header_tail
-
-    per_allele_fields = ["core", "icore", "EL_score", "EL_rank"]
-    if has_ba:
-        per_allele_fields += ["BA_score", "BA_rank"]
-    block_w = len(per_allele_fields)
-
-    allele_names: list[str] = []
-    for c in allele_cells:
-        c = c.strip()
-        if not c:
-            continue
-        if "-" in c or c.startswith("HLA"):
-            allele_names.append(c)
-    if not allele_names:
-        raise ValueError(f"Could not infer allele names from line: {allele_line}")
-
-    records: list[dict] = []
-    for line in lines[header_idx + 1 :]:
-        if not line.strip() or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) < len(base_cols) + block_w:
-            continue
-
-        pep = parts[1]
-        k = len(pep)
-
-        tail = parts[len(base_cols) :]
-        for ai, allele in enumerate(allele_names):
-            start = ai * block_w
-            end = start + block_w
-            if end > len(tail):
-                break
-
-            blk = tail[start:end]
-            el_score = pd.to_numeric(blk[2], errors="coerce")
-            el_rank = pd.to_numeric(blk[3], errors="coerce")
-            ba_score = pd.NA
-            ba_rank = pd.NA
-            if has_ba:
-                ba_score = pd.to_numeric(blk[4], errors="coerce")
-                ba_rank = pd.to_numeric(blk[5], errors="coerce")
-
-            rec = {
-                "peptide": pep,
-                "k": int(k),
-                "allele": allele,
-                "netMHCpan_EL_score": float(el_score) if pd.notna(el_score) else pd.NA,
-                "netMHCpan_EL_rank": float(el_rank) if pd.notna(el_rank) else pd.NA,
-            }
-            if has_ba:
-                rec["netMHCpan_BA_score"] = float(ba_score) if pd.notna(ba_score) else pd.NA
-                rec["netMHCpan_BA_rank"] = float(ba_rank) if pd.notna(ba_rank) else pd.NA
-
-            records.append(rec)
-
-    return pd.DataFrame.from_records(records)
-
-
-def read_unique_peptides_tsv(path: Path) -> pd.DataFrame:
-    """
-    Read unique_peptides.tsv:
-      peptide_id, peptide, k, occurrence_count
-    """
-    df = pd.read_csv(path, sep="\t", dtype=str)
-    required = {"peptide_id", "peptide", "k", "occurrence_count"}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(f"{path} missing required columns: {sorted(missing)}")
-
-    df = df.copy()
-    df["peptide"] = df["peptide"].astype(str)
-    df["k"] = pd.to_numeric(df["k"], errors="coerce").astype("Int64")
-    df["occurrence_count"] = pd.to_numeric(df["occurrence_count"], errors="coerce").astype("Int64")
-    return df[["peptide_id", "peptide", "k", "occurrence_count"]]
-
-
-def read_peptide_variant_map_tsv(path: Path) -> pd.DataFrame:
-    """
-    Read peptide_variant_map.tsv:
-      peptide_id, variant_id, start, end, + metadata columns (e.g. criteria)
-    """
-    df = pd.read_csv(path, sep="\t", dtype=str)
-    required = {"peptide_id", "variant_id", "start", "end"}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(f"{path} missing required columns: {sorted(missing)}")
-
-    df = df.copy()
-    df["start"] = pd.to_numeric(df["start"], errors="coerce").astype("Int64")
-    df["end"] = pd.to_numeric(df["end"], errors="coerce").astype("Int64")
-    return df
-
-
-def infer_kmer_range_from_df(df: pd.DataFrame) -> str:
-    mn = int(pd.to_numeric(df["k"], errors="coerce").min())
-    mx = int(pd.to_numeric(df["k"], errors="coerce").max())
-    return f"{mn}-{mx}mer" if mn != mx else f"{mn}mer"
+from src.netmhcpan import parse_netmhcpan_xls_wide_tsv, read_unique_peptides_tsv, read_peptide_variant_map_tsv, infer_kmer_range_from_df
 
 
 def main() -> int:

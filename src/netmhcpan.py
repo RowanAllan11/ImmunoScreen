@@ -1,44 +1,27 @@
+from __future__ import annotations
+
 import argparse
 import os
 import subprocess
 from pathlib import Path
+from typing import List
 
 import pandas as pd
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
-NETMHCPAN_WRAPPER = REPO_ROOT / "tools" / "netMHCpan-4.2" / "netMHCpan"
+DEFAULT_NETMHC_PATH = REPO_ROOT / "tools" / "netMHCpan-4.2" / "netMHCpan"
 
 
-def read_lines(path: Path) -> list[str]:
-    lines = []
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            s = line.strip()
-            if not s or s.startswith("#"):
-                continue
-            lines.append(s)
-    return lines
+# Reads alleles from a text file (one allele per line), uses for netMHCpan -a argument
+def _read_alleles(path: Path) -> List[str]:
+    with path.open("r", encoding="utf-8") as fh:
+        return [line.strip() for line in fh if line.strip() and not line.strip().startswith("#")]
 
 
-def write_peptides_temp(peptides: list[str], out_path: Path) -> None:
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
-        for p in peptides:
-            f.write(p + "\n")
-
-
-def read_unique_peptides(peptides_tsv: Path, *, kmer: int) -> list[str]:
-    """
-    Read peptides of a given k from tabular fragmentation output peptides TSV.
-
-    Expected columns: peptide_id, peptide, k, occurrence_count
-    """
+def read_unique_peptides(peptides_tsv: Path, *, kmer: int) -> List[str]:
     df = pd.read_csv(peptides_tsv, sep="\t", dtype=str)
-    for col in ("peptide", "k"):
-        if col not in df.columns:
-            raise ValueError(f"{peptides_tsv} missing required column '{col}' (cols={list(df.columns)})")
-
+    if "peptide" not in df.columns or "k" not in df.columns:
+        raise ValueError(f"{peptides_tsv} must contain 'peptide' and 'k' columns")
     df["k"] = pd.to_numeric(df["k"], errors="coerce")
     df = df[df["k"] == int(kmer)]
     peptides = (
@@ -52,53 +35,44 @@ def read_unique_peptides(peptides_tsv: Path, *, kmer: int) -> list[str]:
     )
     return peptides
 
+# Writes a list of peptides to a temporary text file, one peptide per line, for netMHCpan input
+def _write_temp_peptides(peptides: List[str], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        for p in peptides:
+            fh.write(p + "\n")
 
-def run_one(
+
+def run_netmhcpan_for_k(
     *,
-    aav: str,
-    kmer: int,
+    peptides_tsv: Path,
+    k: int,
     alleles_path: Path,
-    fragments_path: Path | None,
-    peptides_tsv: Path | None,
-    outdir: Path,
     netmhcpan_path: Path,
-    extra: list[str],
-    output_format: str,
+    outdir: Path,
+    output_format: str = "xls",
+    extra: List[str] = (),
 ) -> Path:
-    # read peptides from new or legacy source
-    if peptides_tsv is not None:
-        if not peptides_tsv.exists():
-            raise FileNotFoundError(f"peptides TSV not found: {peptides_tsv}")
-        peptides = read_unique_peptides(peptides_tsv, kmer=int(kmer))
-        if not peptides:
-            raise ValueError(f"No peptides found for k={kmer} in {peptides_tsv}")
-    else:
-        # legacy fallback: fragments_path or inferred txt
-        if fragments_path is None:
-            fragments_path = REPO_ROOT / "data" / "output" / "fragmentation" / f"{aav}_{kmer}mer.txt"
-
-        if not fragments_path.exists():
-            raise FileNotFoundError(f"Fragments file not found: {fragments_path}")
-
-        peptides = read_lines(fragments_path)
-        if not peptides:
-            raise ValueError(f"No peptides found in {fragments_path}")
-
+    if not peptides_tsv.exists():
+        raise FileNotFoundError(peptides_tsv)
     if not alleles_path.exists():
-        raise FileNotFoundError(f"Alleles file not found: {alleles_path}")
-
+        raise FileNotFoundError(alleles_path)
     if not netmhcpan_path.exists():
-        raise FileNotFoundError(f"netMHCpan wrapper not found: {netmhcpan_path}")
+        raise FileNotFoundError(netmhcpan_path)
 
-    alleles = read_lines(alleles_path)
+    peptides = read_unique_peptides(peptides_tsv, kmer=int(k))
+    if not peptides:
+        raise ValueError(f"No peptides found for k={k}")
+
+    alleles = _read_alleles(alleles_path)
     if not alleles:
-        raise ValueError(f"No alleles found in {alleles_path}")
+        raise ValueError("No alleles found")
 
     allele_arg = ",".join(alleles)
 
-    # output paths
     outdir.mkdir(parents=True, exist_ok=True)
-    out_prefix = outdir / f"{aav}_{kmer}mer"
+    prefix = Path(peptides_tsv).parent.name
+    out_prefix = outdir / f"{prefix}_{k}mer"
     tmp_peptides = out_prefix.with_suffix(".peptides.tmp.txt")
 
     if output_format == "xls":
@@ -106,37 +80,27 @@ def run_one(
     elif output_format == "txt":
         out_path = out_prefix.with_suffix(".netmhcpan.txt")
     else:
-        raise ValueError(f"Unsupported output_format: {output_format}")
+        raise ValueError("output_format must be 'xls' or 'txt'")
 
-    write_peptides_temp(peptides, tmp_peptides)
+    _write_temp_peptides(peptides, tmp_peptides)
 
-    cmd = [
-        str(netmhcpan_path),
-        "-p",
-        "-a",
-        allele_arg,
-        "-f",
-        str(tmp_peptides),
-    ]
-
+    cmd = [str(netmhcpan_path), "-p", "-a", allele_arg, "-f", str(tmp_peptides)]
     if output_format == "xls":
         cmd += ["-xls", "-xlsfile", str(out_path)]
-
-    cmd += extra
+    cmd += list(extra or ())
 
     env = os.environ.copy()
     env.setdefault("TMPDIR", "/tmp")
 
-    with out_path.open("w", encoding="utf-8") as out_f:
-        proc = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, text=True, env=env)
+    # write output (stdout) directly to out_path for txt mode; xls flag handles writing when requested
+    if output_format == "txt":
+        with out_path.open("w", encoding="utf-8") as out_f:
+            proc = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, text=True, env=env)
+    else:
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
 
     if proc.returncode != 0:
-        raise RuntimeError(
-            "netMHCpan failed.\n"
-            f"Command: {' '.join(cmd)}\n"
-            f"Exit code: {proc.returncode}\n"
-            f"Stderr:\n{proc.stderr}"
-        )
+        raise RuntimeError(f"netMHCpan failed (returncode={proc.returncode}):\n{proc.stderr}")
 
     try:
         tmp_peptides.unlink()
@@ -146,103 +110,127 @@ def run_one(
     return out_path
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Run NetMHCpan on fragment peptides / peptides TSV.")
-    ap.add_argument(
-        "--aav",
-        default=None,
-        help="Output naming prefix (legacy assumed AAV9_VP1). If omitted, inferred from input.",
-    )
-    ap.add_argument(
-        "--kmers",
-        type=int,
-        nargs="+",
-        default=[11],
-        help="One or more k-mer lengths (e.g. --kmers 8 9 10 11). Default: 11",
-    )
-    ap.add_argument("--alleles", required=True, type=Path, help="Path to allele list .txt (one allele per line)")
+def parse_netmhcpan_xls_wide_tsv(path: Path) -> pd.DataFrame:
+    """
+    Parse NetMHCpan -xls output (tab-delimited "wide" table) into tidy/long df with:
+      peptide, k, allele, netMHCpan_EL_score, netMHCpan_EL_rank, (optional BA_score, BA_rank)
+    """
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
 
-    # NEW: tabular fragmentation input (renamed to --peptides)
-    ap.add_argument(
-        "--peptides",
-        type=Path,
-        default=None,
-        help="Path to unique_peptides.tsv from tabular fragmentation (columns: peptide_id, peptide, k, occurrence_count).",
-    )
+    header_idx = None
+    for i, line in enumerate(lines):
+        if line.startswith("Pos\tPeptide\tID\t"):
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError(f"Could not find NetMHCpan xls header in: {path}")
 
-    # legacy optional explicit fragments file
-    ap.add_argument(
-        "--fragments",
-        type=Path,
-        default=None,
-        help="Legacy: explicit fragments txt file path (single file). If provided, --kmers must be a single value.",
-    )
+    allele_line = lines[header_idx - 1]
+    allele_cells = allele_line.split("\t")
 
-    ap.add_argument(
-        "--outdir",
-        type=Path,
-        default=REPO_ROOT / "data" / "output" / "netmhcpan",
-        help="Output directory (default: data/output/netmhcpan)",
-    )
-    ap.add_argument(
-        "--netmhcpan",
-        type=Path,
-        default=NETMHCPAN_WRAPPER,
-        help="Path to netMHCpan wrapper script (default: tools/netMHCpan-4.2/netMHCpan)",
-    )
-    ap.add_argument(
-        "--output-format",
-        choices=["xls", "txt"],
-        default="xls",
-        help="Output format to write (default: xls).",
-    )
-    ap.add_argument(
-        "--extra",
-        nargs=argparse.REMAINDER,
-        default=[],
-        help="Extra args forwarded to netMHCpan (put after --extra ...)",
-    )
-
-    args = ap.parse_args()
-
-    if args.fragments is not None and len(args.kmers) != 1:
-        raise ValueError("--fragments can only be used with a single kmer.")
-
-    if args.peptides is not None and args.fragments is not None:
-        raise ValueError("Use only one of --peptides or --fragments (not both).")
-
-    # choose prefix name
-    if args.aav is not None:
-        prefix = args.aav
-    elif args.peptides is not None:
-        prefix = Path(args.peptides).parent.name
-    else:
-        raise ValueError("Provide --aav (legacy) or --peptides (new mode).")
-
-    for k in args.kmers:
-        out_path = run_one(
-            aav=prefix,
-            kmer=int(k),
-            alleles_path=args.alleles,
-            fragments_path=args.fragments,
-            peptides_tsv=args.peptides,
-            outdir=args.outdir,
-            netmhcpan_path=args.netmhcpan,
-            extra=args.extra,
-            output_format=args.output_format,
+    col_header = lines[header_idx].split("\t")
+    base_cols = ["Pos", "Peptide", "ID"]
+    if col_header[: len(base_cols)] != base_cols:
+        raise ValueError(
+            "Unexpected NetMHCpan xls columns. "
+            f"Expected prefix {base_cols}, got {col_header[:len(base_cols)]}"
         )
-        print(f"Wrote: {out_path}")
 
-    return 0
+    header_tail = col_header[len(base_cols) :]
+    has_ba = "BA_score" in header_tail
+
+    per_allele_fields = ["core", "icore", "EL_score", "EL_rank"]
+    if has_ba:
+        per_allele_fields += ["BA_score", "BA_rank"]
+    block_w = len(per_allele_fields)
+
+    allele_names: list[str] = []
+    for c in allele_cells:
+        c = c.strip()
+        if not c:
+            continue
+        if "-" in c or c.startswith("HLA"):
+            allele_names.append(c)
+    if not allele_names:
+        raise ValueError(f"Could not infer allele names from line: {allele_line}")
+
+    records: list[dict] = []
+    for line in lines[header_idx + 1 :]:
+        if not line.strip() or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < len(base_cols) + block_w:
+            continue
+
+        pep = parts[1]
+        k = len(pep)
+
+        tail = parts[len(base_cols) :]
+        for ai, allele in enumerate(allele_names):
+            start = ai * block_w
+            end = start + block_w
+            if end > len(tail):
+                break
+
+            blk = tail[start:end]
+            el_score = pd.to_numeric(blk[2], errors="coerce")
+            el_rank = pd.to_numeric(blk[3], errors="coerce")
+            ba_score = pd.NA
+            ba_rank = pd.NA
+            if has_ba:
+                ba_score = pd.to_numeric(blk[4], errors="coerce")
+                ba_rank = pd.to_numeric(blk[5], errors="coerce")
+
+            rec = {
+                "peptide": pep,
+                "k": int(k),
+                "allele": allele,
+                "netMHCpan_EL_score": float(el_score) if pd.notna(el_score) else pd.NA,
+                "netMHCpan_EL_rank": float(el_rank) if pd.notna(el_rank) else pd.NA,
+            }
+            if has_ba:
+                rec["netMHCpan_BA_score"] = float(ba_score) if pd.notna(ba_score) else pd.NA
+                rec["netMHCpan_BA_rank"] = float(ba_rank) if pd.notna(ba_rank) else pd.NA
+
+            records.append(rec)
+
+    return pd.DataFrame.from_records(records)
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+def read_unique_peptides_tsv(path: Path) -> pd.DataFrame:
+    """
+    Read unique_peptides.tsv:
+      peptide_id, peptide, k, occurrence_count
+    """
+    df = pd.read_csv(path, sep="\t", dtype=str)
+    required = {"peptide_id", "peptide", "k", "occurrence_count"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"{path} missing required columns: {sorted(missing)}")
 
-"""
-python -m src.netmhcpan \
-  --peptides data/output/fragmentation/variants_vr5_9/unique_peptides.tsv \
-  --kmers 9 \
-  --alleles data/input/alleles/netmhcpan/allele_single.txt \
-  --outdir data/output/netmhcpan/VR5_9mer
-"""
+    df = df.copy()
+    df["peptide"] = df["peptide"].astype(str)
+    df["k"] = pd.to_numeric(df["k"], errors="coerce").astype("Int64")
+    df["occurrence_count"] = pd.to_numeric(df["occurrence_count"], errors="coerce").astype("Int64")
+    return df[["peptide_id", "peptide", "k", "occurrence_count"]]
+
+def read_peptide_variant_map_tsv(path: Path) -> pd.DataFrame:
+    """
+    Read peptide_variant_map.tsv:
+      peptide_id, variant_id, start, end, + metadata columns (e.g. criteria)
+    """
+    df = pd.read_csv(path, sep="\t", dtype=str)
+    required = {"peptide_id", "variant_id", "start", "end"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"{path} missing required columns: {sorted(missing)}")
+
+    df = df.copy()
+    df["start"] = pd.to_numeric(df["start"], errors="coerce").astype("Int64")
+    df["end"] = pd.to_numeric(df["end"], errors="coerce").astype("Int64")
+    return df
+
+def infer_kmer_range_from_df(df: pd.DataFrame) -> str:
+    mn = int(pd.to_numeric(df["k"], errors="coerce").min())
+    mx = int(pd.to_numeric(df["k"], errors="coerce").max())
+    return f"{mn}-{mx}mer" if mn != mx else f"{mn}mer"

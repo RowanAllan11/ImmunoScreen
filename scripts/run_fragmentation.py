@@ -7,9 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.fragment import write_fragment_outputs
-from src.fragmentation_io import iter_fasta_inputs, iter_table_inputs
-from src.fragmentation_pipeline import fragment_to_tables
+from src.fragmentation import iter_fasta_inputs, iter_table_inputs, fragment_to_tables
 
 
 def _parse_kmers(values: list[str]) -> list[int]:
@@ -24,13 +22,13 @@ def _parse_kmers(values: list[str]) -> list[int]:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Fragment protein sequences into overlapping k-mers.")
     ap.add_argument("--input-type", choices=["fasta", "csv"], default="fasta", help="Input type. Default: fasta")
-    ap.add_argument("--i", type=Path, required=False, default=Path("data/input/AAV9_VP1.fasta"), help="Input path")
+    ap.add_argument("--i", type=Path, required=False, default=None, help="Input path")
     ap.add_argument("--out-dir", type=Path, default=Path("data/output/fragmentation"), help="Output directory")
 
     ap.add_argument(
         "--kmers",
         nargs="+",
-        default=[str(k) for k in (8, 9, 10, 11, 12, 13, 14, 15)],
+        default=None,
         help="k-mer sizes, e.g. --kmers 8 9 10 ...",
     )
 
@@ -55,19 +53,6 @@ def main() -> int:
         help="Optional separator override for table input (default: inferred from extension)",
     )
 
-    # FASTA legacy outputs
-    ap.add_argument(
-        "--out-prefix",
-        default=None,
-        help="FASTA legacy mode: prefix for per-k output files (default: fasta stem).",
-    )
-    ap.add_argument(
-        "--tabular",
-        action="store_true",
-        help="Write unified tabular outputs (all_fragments/unique_peptides/peptide_variant_map). Recommended for csv input.",
-    )
-
-    # Variable-region filtering (tabular pipeline)
     ap.add_argument(
         "--var-only",
         action="store_true",
@@ -84,20 +69,6 @@ def main() -> int:
 
     args = ap.parse_args()
     kmers = _parse_kmers(args.kmers)
-
-    if args.input_type == "fasta" and not args.tabular:
-        fasta_path: Path = args.i
-        out_prefix = args.out_prefix or fasta_path.stem
-        for k in kmers:
-            tsv_path, txt_path = write_fragment_outputs(
-                fasta_path=fasta_path,
-                k=int(k),
-                out_dir=args.out_dir,
-                out_prefix=out_prefix,
-            )
-            print(f"[k={k}] wrote {tsv_path}")
-            print(f"[k={k}] wrote {txt_path}")
-        return 0
 
     if args.input_type == "fasta":
         inputs = iter_fasta_inputs(args.i)
@@ -137,11 +108,8 @@ if __name__ == "__main__":
 python scripts/run_fragmentation.py \
   --input-type csv \
   --i data/input/libraries/VR5_v3_final_library_detailed.csv \
-  --id-col Geneid \
-  --sequence-col twist_seq_prot \
   --metadata-cols criteria \
-  --tabular \
   --var-only --var-start 8 --var-end 24 --var-mode overlap \
-  --out-dir data/output/fragmentation/variants_vr5_8-11 \
-  --kmers 8 9 10 11
+  --out-dir data/output/fragmentation/variants_vr5_9 \
+  --kmers 9
 """

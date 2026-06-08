@@ -1,11 +1,103 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterator, Optional, Sequence, Union, List, Tuple, Iterable
 
-from src.fragment import fragment_sequence
-from src.fragmentation_io import FragmentationInput
+import pandas as pd
+
+"""
+Two types of input sources for fragmentation:
+1. FASTA file e.g. AAV1_VP1.fasta
+2. Tabular file of AAV variant libraries e.g. VR5_v3_final_library_detailed.tsv with columns: Geneid,twist_seq,twist_seq_prot,criteria,evo_score_label,evo_score
+"""
+
+def read_fasta(path: Union[str, Path]) -> List[Tuple[str, str, str]]:
+    """
+    Minimal FASTA reader.
+
+    Returns a list of tuples: (record_id, description, sequence)
+      - record_id: first token after '>'
+      - description: full header line (without leading '>')
+      - sequence: concatenated sequence lines (whitespace removed)
+    """
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    out: List[Tuple[str, str, str]] = []
+    for entry in (e.strip() for e in text.split(">") if e.strip()):
+        lines = entry.splitlines()
+        header = lines[0].strip()
+        rid = header.split(None, 1)[0] if header else header
+        seq = "".join(l.strip().replace(" ", "") for l in lines[1:])
+        out.append((rid, header, seq))
+    return out
+
+def fragment_sequence(seq: str, k: int) -> Iterator[Tuple[int, str]]:
+    """
+    Yield (start_index, peptide) sliding windows of length k with step 1.
+    """
+    if k <= 0:
+        raise ValueError("k must be > 0")
+    n = len(seq)
+    # no fragments if sequence shorter than k
+    for i in range(0, n - k + 1):
+        yield i, seq[i : i + k]
+
+
+@dataclass(frozen=True)
+class FragmentationInput:
+    sequence_id: str
+    sequence: str
+    metadata: Dict[str, str]
+
+
+def iter_fasta_inputs(path: Union[str, Path]) -> Iterator[FragmentationInput]:
+    """
+    Stream FASTA records into FragmentationInput.
+    """
+
+    path = Path(path)
+    for record_id, record_desc, seq in read_fasta(path):
+        yield FragmentationInput(
+            sequence_id=str(record_id),
+            sequence=str(seq),
+            metadata={"record_desc": str(record_desc)},
+        )
+
+
+def iter_table_inputs(
+    path: Union[str, Path],
+    *,
+    id_col: str,
+    sequence_col: str,
+    metadata_cols: Optional[Sequence[str]] = None,
+    chunksize: int = 50_000,
+    sep: Optional[str] = None,
+) -> Iterator[FragmentationInput]:
+    """
+    Stream TSV/CSV rows into FragmentationInput using pandas chunked read.
+    """
+    path = Path(path)
+
+    usecols = [id_col, sequence_col]
+    if metadata_cols:
+        for c in metadata_cols:
+            if c not in usecols:
+                usecols.append(c)
+
+    for chunk in pd.read_csv(path, sep=sep, dtype=str, usecols=usecols, chunksize=chunksize):
+        chunk = chunk.fillna("")
+        for _, row in chunk.iterrows():
+            sid = str(row[id_col]).strip()
+            seq = str(row[sequence_col]).strip().replace(" ", "")
+            if not sid or not seq:
+                continue
+            md: Dict[str, str] = {}
+            if metadata_cols:
+                for c in metadata_cols:
+                    md[c] = str(row.get(c, "")).strip()
+            yield FragmentationInput(sequence_id=sid, sequence=seq, metadata=md)
 
 
 def _ensure_parent(p: Path) -> None:

@@ -13,6 +13,9 @@ dist/
 htmlcov/
 .ipynb_checkpoints/
 
+# Tools
+tools/**
+
 # Environments
 .venv/
 venv/
@@ -30,7 +33,7 @@ conda/
 # Logs
 *.log
 
-# Data + outputs (keep READMEs)
+# Data + outputs
 data/input/*
 data/output/*
 !data/input/README.md

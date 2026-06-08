@@ -6,6 +6,13 @@ dependencies:
   - pip
   - pandas
   - numpy
+  - pytorch
+  - scikit-learn
+  - matplotlib
+  - psutil
   - pip:
       - pytest
       - mhcflurry
+
+
+# Still a wip - needs to be double checked and tested
