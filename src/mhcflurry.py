@@ -71,7 +71,7 @@ def run_mhcflurry_predict(
     subprocess.run(cmd, check=True)
     return out_path
 
-from netmhcpan import read_unique_peptides_tsv, read_peptide_variant_map_tsv
+from src.netmhcpan import read_unique_peptides_tsv, read_peptide_variant_map_tsv
 
 
 def filter_and_expand_mhcflurry_predictions(
