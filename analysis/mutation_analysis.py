@@ -23,7 +23,7 @@ X_cols = mutation_dummies.columns
 X = df_mut[X_cols]
 
 # Response variable
-y_col = "score"  # replace with your score column
+y_col = "NetMHCpan_EL_rank"
 
 # ---------------------------
 # Bootstrap by variant

@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Optional
+import re
 
 import pandas as pd
 
@@ -19,6 +20,40 @@ def mutation_string(vr_seq: str, wt_vr_seq: str) -> str:
         if wt != var:
             mutations.append(f"{wt}{i}{var}")
     return "WT" if not mutations else ";".join(mutations)
+
+
+def peptide_mutation_string(
+    mutation: str,
+    peptide_start: int,
+    peptide_end: int,
+    *,
+    var_start: int = 8,
+) -> str:
+    """
+    Keep only VR mutations that overlap the peptide coordinates.
+
+    mutation positions are VR-relative, e.g. S1L.
+    peptide_start/end are full protein coordinates, 1-based inclusive.
+    var_start is the full protein coordinate where the VR begins.
+    """
+    if pd.isna(mutation) or mutation == "WT":
+        return "WT"
+
+    kept = []
+
+    for mut in str(mutation).split(";"):
+        mut = mut.strip()
+        match = re.match(r"^([A-Z*])(\d+)([A-Z*])$", mut)
+        if not match:
+            continue
+
+        vr_pos = int(match.group(2))
+        protein_pos = var_start + vr_pos - 1
+
+        if peptide_start <= protein_pos <= peptide_end:
+            kept.append(mut)
+
+    return "WT" if not kept else ";".join(kept)
 
 
 def _extract_vr_series(lib_df: pd.DataFrame, seq_col: str, var_start: int, var_end: int) -> pd.Series:
@@ -70,4 +105,16 @@ def attach_mutation_labels(
     # merge (left join so we keep all rows from results_df)
     out = results_df.merge(lib_map, on=variant_id_col, how="left", validate="many_to_one")
 
+    out = out.rename(columns={"mutation": "VR_mutation"})
+
+    out["peptide_mutation"] = out.apply(
+        lambda row: peptide_mutation_string(
+            row["VR_mutation"],
+            int(row["start"]),
+            int(row["end"]),
+            var_start=var_start,
+        ),
+        axis=1,
+    )
+    
     return out
