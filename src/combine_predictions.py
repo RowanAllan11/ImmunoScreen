@@ -79,7 +79,7 @@ def combine_predictions(netmhcpan_file: Path, mhcflurry_file: Path) -> pd.DataFr
         suffixes=("_netmhcpan", "_mhcflurry"),
     )
 
-    for col in ["peptide", "length", "occurrence_count", "criteria"]:
+    for col in ["peptide_id", "length", "occurrence_count", "criteria"]:
         net_col = f"{col}_netmhcpan"
         mhc_col = f"{col}_mhcflurry"
 
@@ -90,7 +90,7 @@ def combine_predictions(netmhcpan_file: Path, mhcflurry_file: Path) -> pd.DataFr
             )
             combined = combined.drop(columns=[net_col, mhc_col])
 
-    front = MERGE_KEYS + ["peptide", "length", "occurrence_count", "criteria"]
+    front = MERGE_KEYS + ["peptide_id", "length", "occurrence_count", "criteria"]
     front = [c for c in front if c in combined.columns]
     rest = [c for c in combined.columns if c not in front]
 
