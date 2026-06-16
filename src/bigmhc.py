@@ -93,8 +93,24 @@ def _read_bigmhc_output(pred_csv: Path, score_col: str | None) -> tuple[pd.DataF
             f"BigMHC output missing score column '{use_col}': {pred_csv} "
             f"(available BigMHC cols={inferred}, all cols={list(df.columns)})"
         )
+    
+    if "mhc" not in df.columns:
+        raise ValueError(
+            f"BigMHC output missing 'mhc' column: {pred_csv} "
+            f"(cols={list(df.columns)})"
+        )
 
-    out = df[["pep", use_col]].copy()
-    out.rename(columns={"pep": "peptide"}, inplace=True)
-    out = out.groupby("peptide", as_index=False)[use_col].max()
+    out = df[["mhc", "pep", use_col]].copy()
+    out.rename(
+        columns={
+            "mhc": "allele",
+            "pep": "peptide",
+        },
+        inplace=True,
+    )
+    out = out.groupby(
+        ["allele", "peptide"],
+        as_index=False,
+    )[use_col].max()
+
     return out, use_col

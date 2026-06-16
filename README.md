@@ -217,7 +217,8 @@ python scripts/run_bigmhc.py \
   --i data/output/combined/VR5_V3__k9/combined_annotated.tsv \
   --m el \
   --t 2 \
-  --d cpu
+  --d cpu \
+  --jobs 16
 ```
 
 #### Output

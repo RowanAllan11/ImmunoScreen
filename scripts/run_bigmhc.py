@@ -24,6 +24,7 @@ def main() -> int:
     ap.add_argument("--m", type=str, default="el", help="BigMHC -m (example: el). Default: el")
     ap.add_argument("--t", type=int, default=2, help="BigMHC -t. Default: 2")
     ap.add_argument("--d", type=str, default="cpu", help='BigMHC -d (e.g. "cpu" or "cuda"). Default: cpu')
+    ap.add_argument("--jobs", type=int, default=8)
     ap.add_argument(
         "--score-col",
         type=str,
@@ -76,6 +77,7 @@ def main() -> int:
         f"-m={args.m}",
         f"-t={args.t}",
         f"-d={args.d}",
+        f"-j={args.jobs}",
         f"-o={pred_csv}",
     ]
     print(f"Running: {' '.join(cmd)}")
@@ -162,5 +164,6 @@ if __name__ == "__main__":
 
 """
 python scripts/run_bigmhc.py \
-  --i data/output/combined/VR5_V3__k9/combined_annotated.tsv
+  --i data/output/combined/VR5_V3__k9/combined_annotated.tsv \
+  --jobs 16
 """
