@@ -77,7 +77,12 @@ def combine_predictions(netmhcpan_file: Path, mhcflurry_file: Path) -> pd.DataFr
         how="outer",
         validate="one_to_one",
         suffixes=("_netmhcpan", "_mhcflurry"),
+        indicator=True
     )
+
+    print("Merge result:")
+    print(combined["_merge"].value_counts())
+    combined = combined.drop(columns="_merge")
 
     for col in ["peptide_id", "length", "occurrence_count", "criteria"]:
         net_col = f"{col}_netmhcpan"
