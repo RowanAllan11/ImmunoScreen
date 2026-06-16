@@ -8,6 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.fragmentation import iter_fasta_inputs, iter_table_inputs, fragment_to_tables
+from src.naming import make_run_label
 
 
 def _parse_kmers(values: list[str]) -> list[int]:
@@ -21,7 +22,14 @@ def _parse_kmers(values: list[str]) -> list[int]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Fragment protein sequences into overlapping k-mers.")
-    ap.add_argument("--input-type", choices=["fasta", "csv"], default="fasta", help="Input type. Default: fasta")
+    ap.add_argument("--input-type", choices=["fasta", "csv"], default="csv", help="Input type. Default: csv")
+
+    ap.add_argument(
+        "--tag",
+        required=True,
+        help="Initial run tag used in output naming, e.g. AAV9, VR5_V3, VP1.",
+    )
+
     ap.add_argument("--i", type=Path, required=False, default=None, help="Input path")
     ap.add_argument("--out-dir", type=Path, default=Path("data/output/fragmentation"), help="Output directory")
 
@@ -42,15 +50,15 @@ def main() -> int:
     ap.add_argument(
         "--metadata-cols",
         nargs="*",
-        default=[],
+        default=["criteria"],
         help="Metadata columns to carry through (space-separated), e.g. --metadata-cols criteria",
     )
     ap.add_argument("--chunksize", type=int, default=50_000, help="Chunk size for csv/tsv streaming. Default: 50000")
     ap.add_argument(
         "--sep",
         type=str,
-        default=None,
-        help="Optional separator override for table input (default: inferred from extension)",
+        default=",",
+        help="Optional separator override for table input (default: is comma).",
     )
 
     ap.add_argument(
@@ -70,6 +78,9 @@ def main() -> int:
     args = ap.parse_args()
     kmers = _parse_kmers(args.kmers)
 
+    run_label = make_run_label(args.tag, kmers)
+    run_out_dir = args.out_dir / run_label
+
     if args.input_type == "fasta":
         inputs = iter_fasta_inputs(args.i)
         metadata_cols = []
@@ -87,7 +98,7 @@ def main() -> int:
     outputs = fragment_to_tables(
         inputs,
         kmers=kmers,
-        out_dir=args.out_dir,
+        out_dir=run_out_dir,
         metadata_cols=metadata_cols,
         var_only=args.var_only,
         var_start=args.var_start,
@@ -106,10 +117,11 @@ if __name__ == "__main__":
 
 """
 python scripts/run_fragmentation.py \
+  --tag VR5_V3 \
   --input-type csv \
   --i data/input/libraries/VR5_v3_final_library_detailed.csv \
-  --metadata-cols criteria \
-  --var-only --var-start 8 --var-end 24 --var-mode overlap \
-  --out-dir data/output/fragmentation/variants_vr5_9 \
+  --var-only \
+  --var-start 8 \
+  --var-end 24 \
   --kmers 9
 """

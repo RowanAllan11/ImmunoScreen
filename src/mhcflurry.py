@@ -127,8 +127,13 @@ def filter_and_expand_mhcflurry_predictions(
             mhc = mhc[mhc["allele"].isin(allele_set)].copy()
 
     # filter by affinity percentile
-    mhc = mhc.dropna(subset=["mhcflurry_affinity_percentile"])
-    mhc = mhc[mhc["mhcflurry_affinity_percentile"] < float(affinity_percentile_threshold)].copy()
+    mhc["MHCflurry_affinity_percentile_pass"] = (
+        mhc["mhcflurry_affinity_percentile"].notna()
+        & (
+            mhc["mhcflurry_affinity_percentile"]
+            < float(affinity_percentile_threshold)
+        )
+    )
 
     # join -> peptide_id via (peptide,k)
     uniq_key = uniq[["peptide_id", "peptide", "k", "occurrence_count"]].copy()
@@ -176,7 +181,7 @@ def filter_and_expand_mhcflurry_predictions(
     ]
     extra_meta = [c for c in pmap.columns if c not in {"peptide_id", "variant_id", "start", "end"}]
     cols.extend(extra_meta)
-    cols.extend(["MHCflurry_affinity_percentile", "MHCflurry_presentation_percentile"])
+    cols.extend(["MHCflurry_affinity_percentile", "MHCflurry_presentation_percentile", "MHCflurry_affinity_percentile_pass"])
 
     for c in cols:
         if c not in out.columns:

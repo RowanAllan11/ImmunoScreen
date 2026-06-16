@@ -101,15 +101,13 @@ This step supports both csv (library input) and fasta:
 Example library input function:
 
 ```bash
-python scripts/run_fragmentation.py\
-  --input-type csv\
-  --i data/input/libraries/VR5_v3_final_library_detailed.csv\
-  --metadata-cols criteria\
-  --var-only\
-  --var-start 8\
-  --var-end 24\
-  --var-mode overlap\
-  --out-dir data/output/fragmentation/variants_vr5_9\
+python scripts/run_fragmentation.py \
+  --tag VR5_V3 \
+  --input-type csv \
+  --i data/input/libraries/VR5_v3_final_library_detailed.csv \
+  --var-only \
+  --var-start 8 \
+  --var-end 24 \
   --kmers 9
 ```
 
@@ -134,22 +132,19 @@ Example:
 
 ```bash
 python scripts/run_mhcflurry_pipeline.py \
-  --unique-peptides data/output/fragmentation/variants_vr5_9/unique_peptides.tsv \
-  --peptide-map data/output/fragmentation/variants_vr5_9/peptide_variant_map.tsv \
+  --peptides data/output/fragmentation/VR5_V3__k9/unique_peptides.tsv \
+  --peptide-map data/output/fragmentation/VR5_V3__k9/peptide_variant_map.tsv \
   --alleles data/input/alleles/mhcflurry/allele_single.txt \
-  --tag VR5_9mer \
-  --affinity-percentile-threshold 2.0 \
-  --outdir data/output
+  --affinity-percentile-threshold 2.0
 ```
 
 #### Important Parameters
 
 | Parameter | Description |
 |------------|-------------|
-| `--unique-peptides` | Deduplicated peptide set generated during fragmentation. |
+| `--peptides` | Deduplicated peptide set generated during fragmentation. |
 | `--peptide-map` | Maps predicted peptides back to individual variants. |
 | `--alleles` | Text file containing one MHCflurry-supported allele per line. |
-| `--tag` | Prefix used for output files. |
 | `--affinity-percentile-threshold` | Maximum affinity percentile rank retained in filtered outputs. Lower values indicate stronger predicted binding. |
 | `--outdir` | Output directory. |
 
@@ -161,14 +156,12 @@ Example:
 
 ```bash
 python -m scripts.run_netmhcpan_pipeline \
-  --peptides data/output/fragmentation/variants_vr5_9/unique_peptides.tsv \
-  --peptide-map data/output/fragmentation/variants_vr5_9/peptide_variant_map.tsv \
+  --peptides data/output/fragmentation/VR5_V3__k9/unique_peptides.tsv \
+  --peptide-map data/output/fragmentation/VR5_V3__k9/peptide_variant_map.tsv \
   --alleles data/input/alleles/netmhcpan/allele_single.txt \
   --kmers 9 \
-  --st VR5 \
   --el-rank-threshold 2.0 \
-  --dedup \
-  --outdir data/output
+  --dedup
 ```
 
 #### Important Parameters
@@ -179,7 +172,6 @@ python -m scripts.run_netmhcpan_pipeline \
 | `--peptide-map` | Maps each unique peptide back to the variants in which it occurs. |
 | `--alleles` | Text file containing one NetMHCpan-supported allele per line. |
 | `--kmers` | Peptide length(s) to evaluate. |
-| `--st` | Sample or library tag used for output file naming. |
 | `--el-rank-threshold` | Maximum EL rank retained in filtered outputs. Lower values indicate stronger predicted presentation. |
 | `--dedup` | Run predictions only on unique peptides to reduce runtime and output size. |
 | `--outdir` | Output directory. |
@@ -192,11 +184,9 @@ Example:
 
 ```bash
 python scripts/combine_and_label.py \
-  --st VR5_v3_9mer \
-  --netmhcpan-file data/output/netmhcpan_filtered/VR5_9mer_netMHCpan.tsv \
-  --mhcflurry-file data/output/mhcflurry_filtered/VR5_9mer_MHCflurry.tsv \
-  --library-csv data/input/libraries/VR5_v3_final_library_detailed.csv \
-  --outdir data/output/combined \
+  --netmhcpan-file data/output/netmhcpan/VR5_V3__k9/predictions_mapped.tsv \
+  --mhcflurry-file data/output/mhcflurry/VR5_V3__k9/predictions_mapped.tsv \
+  --i data/input/libraries/VR5_v3_final_library_detailed.csv \
   --var-start 8 \
   --var-end 24 \
   --wt-vr STTVTQNNNSEFAWPGA
@@ -206,10 +196,9 @@ python scripts/combine_and_label.py \
 
 | Parameter | Description |
 |------------|-------------|
-| `--st` | Sample or library tag used for the output filename. |
 | `--netmhcpan-file` | Filtered NetMHCpan TSV file. |
 | `--mhcflurry-file` | Filtered MHCflurry TSV file. |
-| `--library-csv` | Original variant library CSV used to recover variant sequences. |
+| `--i` | Original variant library CSV used to recover variant sequences. |
 | `--outdir` | Directory where the combined annotated output will be written. |
 | `--var-start` | Variable region start position, 1-based inclusive. Default: `8`. |
 | `--var-end` | Variable region end position, 1-based inclusive. Default: `24`. |
@@ -224,9 +213,8 @@ The script takes the combined TSV produced in the previous step, extracts the un
 Example:
 
 ```bash
-python scripts/run_bigmhc_pipeline.py \
-  --i data/output/combined/VR5_v3_9mer_combined_annotated.tsv \
-  --out data/output/combined/VR5_v3_9mer_combined_netmhcpan_mhcflurry_overall.tsv \
+python scripts/run_bigmhc.py \
+  --i data/output/combined/VR5_V3__k9/combined_annotated.tsv \
   --m el \
   --t 2 \
   --d cpu
@@ -237,8 +225,8 @@ python scripts/run_bigmhc_pipeline.py \
 The final output is a TSV containing the original combined prediction table plus the selected BigMHC score column:
 
 ```text
-data/output/combined/
-└── VR5_v3_9mer_combined_annotated_overall.tsv
+data/output/bigmhc/
+└── .tsv
 ```
 
 ---

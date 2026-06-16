@@ -20,12 +20,11 @@ def main() -> int:
         description="Run MHCflurry, filter predictions, and expand to variant rows."
     )
 
-    ap.add_argument("--unique-peptides", type=Path, required=True)
+    ap.add_argument("--peptides", type=Path, required=True)
     ap.add_argument("--peptide-map", type=Path, required=True)
     ap.add_argument("--alleles", type=Path, required=True)
 
-    ap.add_argument("--outdir", type=Path, default=REPO_ROOT / "data/output")
-    ap.add_argument("--tag", type=str, required=True)
+    ap.add_argument("--outdir", type=Path, default=REPO_ROOT / "data/output/mhcflurry")
 
     ap.add_argument("--mhcflurry-predict", default="mhcflurry-predict")
     ap.add_argument("--affinity-percentile-threshold", type=float, default=2.0)
@@ -34,30 +33,43 @@ def main() -> int:
 
     args = ap.parse_args()
 
-    raw_dir = args.outdir / "mhcflurry" / args.tag
-    filtered_dir = args.outdir / "mhcflurry_filtered" / args.tag
+    peptides_tsv = args.peptides.resolve()
+    peptide_map_tsv = args.peptide_map.resolve()
+    alleles_path = args.alleles.resolve()
 
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    filtered_dir.mkdir(parents=True, exist_ok=True)
+    run_label = peptides_tsv.parent.name
 
-    alleles = _read_alleles(args.alleles)
+    run_dir = args.outdir / run_label
+    run_dir.mkdir(parents=True, exist_ok=True)
 
-    mhc_input_csv = raw_dir / f"{args.tag}.unique_peptides.input.csv"
-    raw_mhcflurry_tsv = raw_dir / f"{args.tag}.unique_peptides.mhcflurry.tsv"
-    filtered_tsv = filtered_dir / f"{args.tag}_MHCflurry.tsv"
+    mhc_input_csv = run_dir / "input.csv"
+    raw_mhcflurry_tsv = run_dir / "predictions.tsv"
+    mapped_tsv = run_dir / "predictions_mapped.tsv"
 
-    n = _write_unique_peptides_allele_input(
-        unique_peptides_tsv=args.unique_peptides,
+    alleles = _read_alleles(alleles_path)
+
+    if not alleles:
+        raise ValueError(
+            f"No alleles were read from: {alleles_path}"
+        )
+
+    n_input_rows = _write_unique_peptides_allele_input(
+        unique_peptides_tsv=peptides_tsv,
         alleles=alleles,
         out_csv=mhc_input_csv,
     )
 
-    if n == 0:
+    if n_input_rows == 0:
         raise RuntimeError(
-            f"0 peptide/allele rows written from: {args.unique_peptides}"
+            f"Zero peptide–allele rows were written from: "
+            f"{peptides_tsv}"
         )
 
-    print(f"Wrote MHCflurry input: {mhc_input_csv} ({n} rows)")
+    print(f"Run label: {run_label}")
+    print(
+        f"Wrote MHCflurry input: {mhc_input_csv} "
+        f"({n_input_rows:,} rows)"
+    )
 
     run_mhcflurry_predict(
         mhcflurry_predict=args.mhcflurry_predict,
@@ -67,19 +79,31 @@ def main() -> int:
         extra=list(args.extra),
     )
 
-    print(f"Wrote raw MHCflurry output: {raw_mhcflurry_tsv}")
+    print(f"Wrote raw MHCflurry predictions: {raw_mhcflurry_tsv}")
 
     out_df = filter_and_expand_mhcflurry_predictions(
-        unique_peptides_tsv=args.unique_peptides,
-        peptide_map_tsv=args.peptide_map,
+        unique_peptides_tsv=peptides_tsv,
+        peptide_map_tsv=peptide_map_tsv,
         mhcflurry_tsv=raw_mhcflurry_tsv,
         affinity_percentile_threshold=args.affinity_percentile_threshold,
-        alleles_path=args.alleles,
+        alleles_path=alleles_path,
     )
 
-    out_df.to_csv(filtered_tsv, sep="\t", index=False)
+    out_df.to_csv(
+        mapped_tsv,
+        sep="\t",
+        index=False,
+    )
 
-    print(f"Wrote filtered MHCflurry output: {filtered_tsv} ({len(out_df)} rows)")
+    pass_col = "MHCflurry_affinity_percentile_pass"
+    n_pass = int(out_df[pass_col].fillna(False).sum())
+
+    print(f"Wrote mapped MHCflurry predictions: {mapped_tsv}")
+    print(
+        f"Passing affinity-percentile threshold: "
+        f"{n_pass:,}/{len(out_df):,} rows "
+        f"(< {args.affinity_percentile_threshold})"
+    )
 
     return 0
 
@@ -90,10 +114,8 @@ if __name__ == "__main__":
 
 """
 python scripts/run_mhcflurry_pipeline.py \
-  --unique-peptides data/output/fragmentation/variants_vr5_9/unique_peptides.tsv \
-  --peptide-map data/output/fragmentation/variants_vr5_9/peptide_variant_map.tsv \
+  --peptides data/output/fragmentation/VR5_V3__k9/unique_peptides.tsv \
+  --peptide-map data/output/fragmentation/VR5_V3__k9/peptide_variant_map.tsv \
   --alleles data/input/alleles/mhcflurry/allele_single.txt \
-  --tag VR5_v3_9mer \
-  --affinity-percentile-threshold 2.0 \
-  --outdir data/output
+  --affinity-percentile-threshold 2.0
 """

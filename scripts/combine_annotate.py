@@ -7,10 +7,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from combine_predictions import combine_predictions
-from mutation_label import attach_mutation_labels
+from src.combine_predictions import combine_predictions
+from src.mutation_label import attach_mutation_labels
 
 
 def main() -> int:
@@ -18,11 +17,10 @@ def main() -> int:
         description="Combine NetMHCpan + MHCflurry outputs and add VR mutation labels."
     )
 
-    ap.add_argument("--st", required=True)
     ap.add_argument("--netmhcpan-file", type=Path, required=True)
     ap.add_argument("--mhcflurry-file", type=Path, required=True)
-    ap.add_argument("--library-csv", type=Path, required=True)
-    ap.add_argument("--outdir", type=Path, required=True)
+    ap.add_argument("--i", type=Path, required=True)
+    ap.add_argument("--outdir", type=Path, default=REPO_ROOT / "data/output/combined")
 
     ap.add_argument("--variant-id-col", default="variant_id")
     ap.add_argument("--library-id-col", default="Geneid")
@@ -33,6 +31,18 @@ def main() -> int:
 
     args = ap.parse_args()
 
+    net_run_label = args.netmhcpan_file.parent.name
+    mhc_run_label = args.mhcflurry_file.parent.name
+
+    if net_run_label != mhc_run_label:
+        raise ValueError(
+            "NetMHCpan and MHCflurry inputs appear to come from different runs: "
+            f"{net_run_label!r} versus {mhc_run_label!r}"
+        )
+
+    run_label = net_run_label
+
+
     combined = combine_predictions(
         netmhcpan_file=args.netmhcpan_file,
         mhcflurry_file=args.mhcflurry_file,
@@ -40,7 +50,7 @@ def main() -> int:
 
     annotated = attach_mutation_labels(
         combined,
-        args.library_csv,
+        args.i,
         variant_id_col=args.variant_id_col,
         library_id_col=args.library_id_col,
         seq_col=args.seq_col,
@@ -49,8 +59,10 @@ def main() -> int:
         wt_vr=args.wt_vr,
     )
 
-    args.outdir.mkdir(parents=True, exist_ok=True)
-    out_path = args.outdir / f"{args.st}_combined_annotated.tsv"
+    run_out_dir = args.outdir / run_label
+    run_out_dir.mkdir(parents=True, exist_ok=True)
+
+    out_path = run_out_dir / "combined_annotated.tsv"
 
     annotated.to_csv(out_path, sep="\t", index=False)
     print(f"Wrote: {out_path} ({len(annotated)} rows)")
@@ -60,3 +72,14 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+"""
+python scripts/combine_and_label.py \
+  --netmhcpan-file data/output/netmhcpan/VR5_V3__k9/predictions_mapped.tsv \
+  --mhcflurry-file data/output/mhcflurry/VR5_V3__k9/predictions_mapped.tsv \
+  --i data/input/libraries/VR5_v3_final_library_detailed.csv \
+  --var-start 8 \
+  --var-end 24 \
+  --wt-vr STTVTQNNNSEFAWPGA
+"""

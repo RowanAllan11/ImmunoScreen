@@ -29,8 +29,9 @@ def main() -> int:
     ap.add_argument("--kmers", type=int, nargs="+", required=True)
 
     ap.add_argument("--netmhcpan", type=Path, default=DEFAULT_NETMHC_PATH)
-    ap.add_argument("--outdir", type=Path, required=True)
-    ap.add_argument("--st", required=True)
+    ap.add_argument("--outdir", type=Path, default=REPO_ROOT / "data/output/netmhcpan",
+    help="Base NetMHCpan output directory.",
+)
 
     ap.add_argument("--el-rank-threshold", type=float, default=2.0)
     ap.add_argument("--dedup", action="store_true")
@@ -39,10 +40,11 @@ def main() -> int:
 
     args = ap.parse_args()
 
-    raw_dir = args.outdir / "netmhcpan"
-    filtered_dir = args.outdir / "netmhcpan_filtered"
+    run_label = args.peptides.parent.name
+    run_dir = args.outdir / run_label
+    raw_dir = run_dir / "raw"
+
     raw_dir.mkdir(parents=True, exist_ok=True)
-    filtered_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Run netMHCpan for each k-mer
     raw_outputs = []
@@ -78,10 +80,13 @@ def main() -> int:
         errors="coerce",
     )
 
-    nm_all = nm_all.dropna(subset=["netMHCpan_EL_rank"])
-    nm_all = nm_all[
-        nm_all["netMHCpan_EL_rank"] < float(args.el_rank_threshold)
-    ].copy()
+    nm_all["netMHCpan_pass"] = (
+        nm_all["netMHCpan_EL_rank"].notna()
+        & (
+            nm_all["netMHCpan_EL_rank"]
+            < float(args.el_rank_threshold)
+        )
+    )
 
     # 5. Join to peptide IDs
     merged = nm_all.merge(
@@ -94,7 +99,9 @@ def main() -> int:
     if merged["peptide_id"].isna().any():
         n_missing = int(merged["peptide_id"].isna().sum())
         raise ValueError(
-            f"{n_missing} filtered netMHCpan rows could not be mapped to peptide_id."
+            f"{n_missing} NetMHCpan rows could not be mapped to peptide_id. "
+            "Ensure the predictions were generated from this exact "
+            "unique_peptides.tsv."
         )
 
     # 6. Fan out to variant occurrences
@@ -139,7 +146,11 @@ def main() -> int:
         if c not in {"peptide_id", "variant_id", "start", "end"}
     ]
 
-    score_cols = ["netMHCpan_EL_score", "netMHCpan_EL_rank"]
+    score_cols = [
+        "netMHCpan_EL_score",
+        "netMHCpan_EL_rank",
+        "netMHCpan_EL_rank_pass",
+    ]
 
     for optional_col in ["netMHCpan_BA_score", "netMHCpan_BA_rank"]:
         if optional_col in out.columns:
@@ -158,12 +169,19 @@ def main() -> int:
     )
 
     # 9. Write final output
-    kmer_tag = infer_kmer_range_from_df(out)
-    out_path = filtered_dir / f"{args.st}_{kmer_tag}_netMHCpan.tsv"
+    out_path = run_dir / "predictions_mapped.tsv"
 
     out.to_csv(out_path, sep="\t", index=False)
 
-    print(f"Wrote final filtered output: {out_path} ({len(out)} rows)")
+    n_pass = int(out["netMHCpan_EL_rank_pass"].sum())
+    n_total = len(out)
+
+    print(f"Wrote mapped NetMHCpan output: {out_path}")
+    print(
+        f"Passing EL-rank threshold: "
+        f"{n_pass:,}/{n_total:,} rows "
+        f"(threshold < {args.el_rank_threshold})"
+    )
 
     return 0
 
@@ -172,14 +190,13 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
+
 """
 python -m scripts.run_netmhcpan_pipeline \
-  --peptides data/output/fragmentation/variants_vr5_9/unique_peptides.tsv \
-  --peptide-map data/output/fragmentation/variants_vr5_9/peptide_variant_map.tsv \
+  --peptides data/output/fragmentation/VR5_V3__k9/unique_peptides.tsv \
+  --peptide-map data/output/fragmentation/VR5_V3__k9/peptide_variant_map.tsv \
   --alleles data/input/alleles/netmhcpan/allele_single.txt \
   --kmers 9 \
-  --st VR5 \
   --el-rank-threshold 2.0 \
-  --dedup \
-  --outdir data/output
+  --dedup
 """

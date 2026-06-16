@@ -24,17 +24,54 @@ def main() -> int:
 
     args = ap.parse_args()
 
-    for k in args.kmers:
+    peptides_tsv = args.peptides.resolve()
+    alleles_path = args.alleles.resolve()
+
+    if not peptides_tsv.is_file():
+        raise FileNotFoundError(
+            f"unique_peptides.tsv not found: {peptides_tsv}"
+        )
+
+    if peptides_tsv.name != "unique_peptides.tsv":
+        raise ValueError(
+            "Expected an input file named 'unique_peptides.tsv', "
+            f"but received: {peptides_tsv.name}"
+        )
+
+    if not alleles_path.is_file():
+        raise FileNotFoundError(
+            f"Allele file not found: {alleles_path}"
+        )
+
+    kmers = sorted(set(int(k) for k in args.kmers))
+
+    if not kmers:
+        raise ValueError("No k-mer lengths were provided.")
+
+    if any(k <= 0 for k in kmers):
+        raise ValueError(
+            f"All k-mer lengths must be positive: {kmers}"
+        )
+
+    run_label = peptides_tsv.parent.name
+    run_out_dir = args.out_dir / run_label
+    run_out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Run label: {run_label}")
+    print(f"NetMHCpan output directory: {run_out_dir}")
+
+    for k in kmers:
         out = run_netmhcpan_for_k(
-            peptides_tsv=args.peptides,
-            k=int(k),
-            alleles_path=args.alleles,
+            peptides_tsv=peptides_tsv,
+            k=k,
+            alleles_path=alleles_path,
             netmhcpan_path=args.netmhcpan,
-            outdir=args.outdir,
+            outdir=run_out_dir,
             output_format=args.output_format,
             extra=list(args.extra),
         )
-        print(f"Wrote: {out}")
+
+        print(f"Wrote k={k}: {out}")
 
     return 0
 
