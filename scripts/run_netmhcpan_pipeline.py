@@ -80,7 +80,7 @@ def main() -> int:
         errors="coerce",
     )
 
-    nm_all["netMHCpan_pass"] = (
+    nm_all["netMHCpan_EL_rank_pass"] = (
         nm_all["netMHCpan_EL_rank"].notna()
         & (
             nm_all["netMHCpan_EL_rank"]

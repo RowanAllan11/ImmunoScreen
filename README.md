@@ -183,7 +183,7 @@ Merge MHCflurry and netMHCpan predictions using shared peptide and variant ident
 Example:
 
 ```bash
-python scripts/combine_and_label.py \
+python scripts/combine_annotate.py \
   --netmhcpan-file data/output/netmhcpan/VR5_V3__k9/predictions_mapped.tsv \
   --mhcflurry-file data/output/mhcflurry/VR5_V3__k9/predictions_mapped.tsv \
   --i data/input/libraries/VR5_v3_final_library_detailed.csv \

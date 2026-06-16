@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 
-MERGE_KEYS = ["allele", "peptide_id", "variant_id", "start", "end", "k"]
+MERGE_KEYS = ["allele", "peptide", "variant_id", "start", "end", "k"]
 
 def normalize_allele(a: str) -> str:
     """
