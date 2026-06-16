@@ -1,1325 +1,703 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
-import re
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 
-# ============================================================
-# CONFIG
-# ============================================================
-
-RUN_LABEL = "VR5_V3__k9"
-
-# Use this after BigMHC:
-INPUT_TSV = Path(
-    f"data/output/bigmhc/{RUN_LABEL}/predictions_mapped.tsv"
-)
-
-# Alternatively, use the combined table before BigMHC:
-# INPUT_TSV = Path(
-#     f"data/output/combined/{RUN_LABEL}/combined_annotated.tsv"
-# )
-
-OUTDIR = Path(
-    f"data/output/descriptive_analysis/{RUN_LABEL}"
-)
-OUTDIR.mkdir(parents=True, exist_ok=True)
-
-PEPTIDE_COL = "peptide"
-ALLELE_COL = "allele"
-VARIANT_COL = "variant_id"
-START_COL = "start"
-END_COL = "end"
-K_COL = "k"
-MUTATION_COL = "peptide_mutation"
-
-NET_PASS_COL = "netMHCpan_EL_rank_pass"
-MHC_PASS_COL = "MHCflurry_affinity_percentile_pass"
-
-NET_SCORE_COLS = [
-    "netMHCpan_EL_score",
-    "netMHCpan_EL_rank"
-]
-
-MHCFLURRY_SCORE_COLS = [
+DEFAULT_SCORE_COLUMNS = [
+    "netMHCpan_EL_rank",
     "MHCflurry_affinity_percentile",
-    "MHCflurry_presentation_percentile",
+    "BigMHC_EL",
 ]
 
-VR_START = 8
-VR_END = 24
 
-MAX_SCATTER_POINTS = 100_000
-RANDOM_SEED = 42
-
-
-# ============================================================
-# HELPERS
-# ============================================================
-
-def parse_boolean_column(series: pd.Series) -> pd.Series:
-    """
-    Parse common Boolean representations safely.
-
-    Returns a pandas nullable Boolean series.
-    """
-    true_values = {"true", "1", "yes", "y"}
-    false_values = {"false", "0", "no", "n"}
-
-    cleaned = (
-        series
-        .astype("string")
-        .str.strip()
-        .str.lower()
-    )
-
-    result = pd.Series(
-        pd.NA,
-        index=series.index,
-        dtype="boolean",
-    )
-
-    result.loc[cleaned.isin(true_values)] = True
-    result.loc[cleaned.isin(false_values)] = False
-
-    return result
-
-
-def safe_filename(value: str) -> str:
-    """
-    Convert a string to a filesystem-safe filename component.
-    """
-    return (
-        str(value)
-        .replace("/", "_")
-        .replace("\\", "_")
-        .replace(" ", "_")
-        .replace(">", "")
-        .replace("<", "")
-        .replace(":", "_")
-    )
-
-
-def count_unique_peptide_allele_pairs(
-    data: pd.DataFrame,
-) -> int:
-    """
-    Count unique allele-peptide prediction units.
-    """
-    if data.empty:
-        return 0
-
-    return (
-        data[[ALLELE_COL, PEPTIDE_COL]]
-        .drop_duplicates()
-        .shape[0]
-    )
-
-
-def count_unique_mapped_occurrences(
-    data: pd.DataFrame,
-) -> int:
-    """
-    Count unique peptide-allele-variant-position occurrences.
-    """
-    keys = [
-        ALLELE_COL,
-        PEPTIDE_COL,
-        VARIANT_COL,
-        START_COL,
-        END_COL,
-        K_COL,
-    ]
-
-    available_keys = [
-        col for col in keys
-        if col in data.columns
-    ]
-
-    if not available_keys or data.empty:
-        return 0
-
-    return data[available_keys].drop_duplicates().shape[0]
-
-
-def calculate_position_overlap(
-    data: pd.DataFrame,
-    *,
-    deduplicate: bool,
-) -> pd.DataFrame:
-    """
-    Count the number of rows or unique epitopes overlapping
-    each residue position.
-
-    When deduplicate=True, each unique:
-        allele + peptide + start + end
-    contributes once.
-    """
-    working = data.dropna(
-        subset=[START_COL, END_COL, PEPTIDE_COL]
-    ).copy()
-
-    if deduplicate:
-        working = working.drop_duplicates(
-            subset=[
-                ALLELE_COL,
-                PEPTIDE_COL,
-                START_COL,
-                END_COL,
-            ]
-        )
-
-    position_counts: dict[int, int] = {}
-
-    for row in working.itertuples(index=False):
-        start = int(getattr(row, START_COL))
-        end = int(getattr(row, END_COL))
-
-        for position in range(start, end + 1):
-            position_counts[position] = (
-                position_counts.get(position, 0) + 1
-            )
-
-    if not position_counts:
-        return pd.DataFrame(
-            columns=["position", "overlap_count"]
-        )
-
-    return (
-        pd.DataFrame(
-            {
-                "position": list(position_counts.keys()),
-                "overlap_count": list(position_counts.values()),
-            }
-        )
-        .sort_values("position")
-        .reset_index(drop=True)
-    )
-
-
-def save_position_plot(
-    position_df: pd.DataFrame,
-    *,
-    output_path: Path,
+def save_histogram(
+    values: pd.Series,
     title: str,
-    ylabel: str,
+    xlabel: str,
+    output_path: Path,
+    bins: int = 50,
 ) -> None:
-    """
-    Save a bar plot of overlap counts by residue position.
-    """
-    if position_df.empty:
+    values = pd.to_numeric(values, errors="coerce").dropna()
+
+    if values.empty:
+        print(f"Skipping empty distribution: {xlabel}")
         return
 
-    plt.figure(figsize=(12, 5))
-    plt.bar(
-        position_df["position"],
-        position_df["overlap_count"],
-    )
-    plt.xlabel("Position")
-    plt.ylabel(ylabel)
+    plt.figure(figsize=(8, 5))
+    plt.hist(values, bins=bins)
+    plt.xlabel(xlabel)
+    plt.ylabel("Number of rows")
     plt.title(title)
-
-    positions = position_df["position"].astype(int)
-    plt.xticks(positions)
-
     plt.tight_layout()
     plt.savefig(output_path, dpi=300)
     plt.close()
 
 
-def parse_peptide_mutations(
-    row: pd.Series,
-    mutation_pattern: re.Pattern[str],
-) -> list[dict[str, object]]:
-    """
-    Parse mutation strings such as:
-        N8G
-        S1L;T3N;N8G
-        WT
-
-    Mutation positions are assumed to be relative to the
-    variable region.
-    """
-    mutation_string = row.get(MUTATION_COL, np.nan)
-
-    if pd.isna(mutation_string):
-        return []
-
-    mutation_string = str(mutation_string).strip()
-
-    if not mutation_string:
-        return []
-
-    if mutation_string.upper() == "WT":
-        return []
-
-    mutations: list[dict[str, object]] = []
-
-    for match in mutation_pattern.finditer(mutation_string):
-        ref_aa = match.group(1)
-        vr_relative_position = int(match.group(2))
-        alt_aa = match.group(3)
-
-        absolute_position = (
-            VR_START + vr_relative_position - 1
-        )
-
-        if (
-            absolute_position < VR_START
-            or absolute_position > VR_END
-        ):
-            continue
-
-        mutations.append(
-            {
-                "variant_id": row.get(VARIANT_COL, np.nan),
-                "allele": row.get(ALLELE_COL, np.nan),
-                "peptide": row.get(PEPTIDE_COL, np.nan),
-                "peptide_start": row.get(START_COL, np.nan),
-                "peptide_end": row.get(END_COL, np.nan),
-                "mutation": (
-                    f"{ref_aa}"
-                    f"{vr_relative_position}"
-                    f"{alt_aa}"
-                ),
-                "ref_aa": ref_aa,
-                "alt_aa": alt_aa,
-                "vr_relative_position": (
-                    vr_relative_position
-                ),
-                "absolute_position": absolute_position,
-                "passes_netmhcpan": row.get(
-                    "passes_netmhcpan",
-                    pd.NA,
-                ),
-                "passes_mhcflurry": row.get(
-                    "passes_mhcflurry",
-                    pd.NA,
-                ),
-                "passes_both": row.get(
-                    "passes_both",
-                    pd.NA,
-                ),
-                "passes_either": row.get(
-                    "passes_either",
-                    pd.NA,
-                ),
-            }
-        )
-
-    return mutations
-
-
-def write_population_position_outputs(
-    analysis_sets: dict[str, pd.DataFrame],
+def save_correlation_heatmap(
+    correlation: pd.DataFrame,
+    title: str,
+    output_path: Path,
 ) -> None:
-    """
-    Write mapped and unique position-overlap summaries
-    for each analysis population.
-    """
-    position_dir = OUTDIR / "position_analysis"
-    position_dir.mkdir(exist_ok=True)
+    plt.figure(figsize=(7, 6))
 
-    population_titles = {
-        "all_candidates": "All evaluated candidates",
-        "netmhcpan_pass": "Candidates passing NetMHCpan",
-        "mhcflurry_pass": "Candidates passing MHCflurry",
-        "both_pass": "Candidates passing both predictors",
-        "either_pass": "Candidates passing either predictor",
-        "neither_pass": "Candidates passing neither predictor",
-    }
-
-    for population, subset in analysis_sets.items():
-        label = population_titles.get(
-            population,
-            population,
-        )
-
-        mapped_overlap = calculate_position_overlap(
-            subset,
-            deduplicate=False,
-        )
-
-        unique_overlap = calculate_position_overlap(
-            subset,
-            deduplicate=True,
-        )
-
-        mapped_overlap.to_csv(
-            position_dir
-            / f"{population}_mapped_overlap_by_position.tsv",
-            sep="\t",
-            index=False,
-        )
-
-        unique_overlap.to_csv(
-            position_dir
-            / f"{population}_unique_overlap_by_position.tsv",
-            sep="\t",
-            index=False,
-        )
-
-        save_position_plot(
-            mapped_overlap,
-            output_path=(
-                position_dir
-                / f"{population}_mapped_overlap_by_position.png"
-            ),
-            title=(
-                f"{label}: mapped candidate occurrences "
-                "across positions"
-            ),
-            ylabel="Number of mapped candidate rows",
-        )
-
-        save_position_plot(
-            unique_overlap,
-            output_path=(
-                position_dir
-                / f"{population}_unique_overlap_by_position.png"
-            ),
-            title=(
-                f"{label}: unique peptide–allele candidates "
-                "across positions"
-            ),
-            ylabel="Number of unique overlapping candidates",
-        )
-
-
-# ============================================================
-# LOAD DATA
-# ============================================================
-
-if not INPUT_TSV.is_file():
-    raise FileNotFoundError(
-        f"Input TSV not found: {INPUT_TSV}"
-    )
-
-df = pd.read_csv(
-    INPUT_TSV,
-    sep="\t",
-    low_memory=False,
-)
-
-df.columns = (
-    df.columns
-    .str.strip()
-    .str.replace(" ", "_")
-    .str.replace(">", "", regex=False)
-)
-
-print("Loaded dataframe:")
-print(f"  Rows: {len(df):,}")
-print(f"  Columns: {len(df.columns):,}")
-print(df.columns.tolist())
-
-
-# ============================================================
-# VALIDATE REQUIRED COLUMNS
-# ============================================================
-
-required_cols = {
-    PEPTIDE_COL,
-    ALLELE_COL,
-    START_COL,
-    END_COL,
-    NET_PASS_COL,
-    MHC_PASS_COL,
-}
-
-missing_required = required_cols - set(df.columns)
-
-if missing_required:
-    raise ValueError(
-        "Input table is missing required columns: "
-        f"{sorted(missing_required)}"
-    )
-
-
-# ============================================================
-# BASIC CLEANING
-# ============================================================
-
-df[START_COL] = pd.to_numeric(
-    df[START_COL],
-    errors="coerce",
-)
-
-df[END_COL] = pd.to_numeric(
-    df[END_COL],
-    errors="coerce",
-)
-
-if K_COL in df.columns:
-    df[K_COL] = pd.to_numeric(
-        df[K_COL],
-        errors="coerce",
-    )
-
-df[PEPTIDE_COL] = (
-    df[PEPTIDE_COL]
-    .astype("string")
-    .str.strip()
-)
-
-df[ALLELE_COL] = (
-    df[ALLELE_COL]
-    .astype("string")
-    .str.strip()
-)
-
-if VARIANT_COL in df.columns:
-    df[VARIANT_COL] = (
-        df[VARIANT_COL]
-        .astype("string")
-        .str.strip()
-    )
-
-df[NET_PASS_COL] = parse_boolean_column(
-    df[NET_PASS_COL]
-)
-
-df[MHC_PASS_COL] = parse_boolean_column(
-    df[MHC_PASS_COL]
-)
-
-missing_pass_annotations = df[
-    [NET_PASS_COL, MHC_PASS_COL]
-].isna().sum()
-
-if missing_pass_annotations.any():
-    raise ValueError(
-        "Missing or unrecognised pass annotations detected:\n"
-        f"{missing_pass_annotations.to_string()}"
-    )
-
-df_pos = df.dropna(
-    subset=[
-        START_COL,
-        END_COL,
-        PEPTIDE_COL,
-        ALLELE_COL,
-    ]
-).copy()
-
-df_pos[START_COL] = (
-    df_pos[START_COL]
-    .astype(int)
-)
-
-df_pos[END_COL] = (
-    df_pos[END_COL]
-    .astype(int)
-)
-
-if K_COL in df_pos.columns:
-    df_pos[K_COL] = (
-        df_pos[K_COL]
-        .astype("Int64")
-    )
-
-if MUTATION_COL in df_pos.columns:
-    df_pos[MUTATION_COL] = (
-        df_pos[MUTATION_COL]
-        .astype("string")
-        .str.strip()
-        .replace(
-            {
-                "": pd.NA,
-                "nan": pd.NA,
-                "NaN": pd.NA,
-            }
-        )
-    )
-else:
-    print(
-        f"Warning: {MUTATION_COL} not found. "
-        "Mutation analyses will be empty."
-    )
-    df_pos[MUTATION_COL] = pd.NA
-
-
-# ============================================================
-# DEFINE PASS POPULATIONS
-# ============================================================
-
-df_pos["passes_netmhcpan"] = (
-    df_pos[NET_PASS_COL].astype("boolean")
-)
-
-df_pos["passes_mhcflurry"] = (
-    df_pos[MHC_PASS_COL].astype("boolean")
-)
-
-df_pos["passes_both"] = (
-    df_pos["passes_netmhcpan"]
-    & df_pos["passes_mhcflurry"]
-)
-
-df_pos["passes_either"] = (
-    df_pos["passes_netmhcpan"]
-    | df_pos["passes_mhcflurry"]
-)
-
-df_pos["passes_neither"] = (
-    ~df_pos["passes_netmhcpan"]
-    & ~df_pos["passes_mhcflurry"]
-)
-
-analysis_sets = {
-    "all_candidates": df_pos,
-    "netmhcpan_pass": (
-        df_pos[df_pos["passes_netmhcpan"]].copy()
-    ),
-    "mhcflurry_pass": (
-        df_pos[df_pos["passes_mhcflurry"]].copy()
-    ),
-    "both_pass": (
-        df_pos[df_pos["passes_both"]].copy()
-    ),
-    "either_pass": (
-        df_pos[df_pos["passes_either"]].copy()
-    ),
-    "neither_pass": (
-        df_pos[df_pos["passes_neither"]].copy()
-    ),
-}
-
-
-# ============================================================
-# 1. POPULATION SUMMARY
-# ============================================================
-
-summary_records: list[dict[str, object]] = []
-
-for population, subset in analysis_sets.items():
-    summary_records.append(
-        {
-            "population": population,
-            "mapped_rows": len(subset),
-            "unique_variants": (
-                subset[VARIANT_COL].nunique()
-                if VARIANT_COL in subset.columns
-                else np.nan
-            ),
-            "unique_peptides": (
-                subset[PEPTIDE_COL].nunique()
-            ),
-            "unique_peptide_allele_pairs": (
-                count_unique_peptide_allele_pairs(
-                    subset
-                )
-            ),
-            "unique_mapped_occurrences": (
-                count_unique_mapped_occurrences(
-                    subset
-                )
-            ),
-            "unique_alleles": (
-                subset[ALLELE_COL].nunique()
-            ),
-            "percent_of_all_rows": (
-                100 * len(subset) / len(df_pos)
-                if len(df_pos)
-                else np.nan
-            ),
-        }
-    )
-
-summary_df = pd.DataFrame(summary_records)
-
-summary_df.to_csv(
-    OUTDIR / "prediction_population_summary.tsv",
-    sep="\t",
-    index=False,
-)
-
-print("\nPrediction population summary:")
-print(summary_df.to_string(index=False))
-
-
-# ============================================================
-# 2. PASS AGREEMENT BETWEEN PREDICTORS
-# ============================================================
-
-row_agreement = pd.crosstab(
-    df_pos["passes_netmhcpan"],
-    df_pos["passes_mhcflurry"],
-    rownames=["NetMHCpan_pass"],
-    colnames=["MHCflurry_pass"],
-    dropna=False,
-)
-
-row_agreement.to_csv(
-    OUTDIR / "predictor_pass_agreement_rows.tsv",
-    sep="\t",
-)
-
-pair_pass = (
-    df_pos[
-        [
-            ALLELE_COL,
-            PEPTIDE_COL,
-            "passes_netmhcpan",
-            "passes_mhcflurry",
-        ]
-    ]
-    .drop_duplicates()
-)
-
-pair_agreement = pd.crosstab(
-    pair_pass["passes_netmhcpan"],
-    pair_pass["passes_mhcflurry"],
-    rownames=["NetMHCpan_pass"],
-    colnames=["MHCflurry_pass"],
-    dropna=False,
-)
-
-pair_agreement.to_csv(
-    OUTDIR
-    / "predictor_pass_agreement_unique_pairs.tsv",
-    sep="\t",
-)
-
-print("\nPass agreement across mapped rows:")
-print(row_agreement)
-
-print("\nPass agreement across unique peptide–allele pairs:")
-print(pair_agreement)
-
-
-# ============================================================
-# 3. PASS RATES BY ALLELE
-# ============================================================
-
-allele_summary = (
-    df_pos
-    .groupby(ALLELE_COL, dropna=False)
-    .agg(
-        mapped_rows=(PEPTIDE_COL, "size"),
-        unique_peptides=(PEPTIDE_COL, "nunique"),
-        netmhcpan_pass_rate=(
-            "passes_netmhcpan",
-            "mean",
-        ),
-        mhcflurry_pass_rate=(
-            "passes_mhcflurry",
-            "mean",
-        ),
-        both_pass_rate=(
-            "passes_both",
-            "mean",
-        ),
-        either_pass_rate=(
-            "passes_either",
-            "mean",
-        ),
-    )
-    .reset_index()
-)
-
-for col in [
-    "netmhcpan_pass_rate",
-    "mhcflurry_pass_rate",
-    "both_pass_rate",
-    "either_pass_rate",
-]:
-    allele_summary[col] = (
-        100 * allele_summary[col]
-    )
-
-allele_summary.to_csv(
-    OUTDIR / "pass_rates_by_allele.tsv",
-    sep="\t",
-    index=False,
-)
-
-
-# ============================================================
-# 4. POSITIONAL DISTRIBUTIONS
-# ============================================================
-
-write_population_position_outputs(
-    analysis_sets
-)
-
-
-# ============================================================
-# 5. PARSE PEPTIDE MUTATIONS
-# ============================================================
-
-mutation_pattern = re.compile(
-    r"([A-Z])(\d+)([A-Z])"
-)
-
-mutation_records: list[dict[str, object]] = []
-
-for _, row in df_pos.iterrows():
-    mutation_records.extend(
-        parse_peptide_mutations(
-            row,
-            mutation_pattern,
-        )
-    )
-
-mut_df = pd.DataFrame(mutation_records)
-
-mutation_dir = OUTDIR / "mutation_analysis"
-mutation_dir.mkdir(exist_ok=True)
-
-if mut_df.empty:
-    print("\nNo peptide mutations detected.")
-else:
-    mut_df.to_csv(
-        mutation_dir / "parsed_peptide_mutations.tsv",
-        sep="\t",
-        index=False,
-    )
-
-    print("\nParsed mutation table:")
-    print(mut_df.head().to_string(index=False))
-
-
-# ============================================================
-# 6. VARIANT-LEVEL MUTATION FREQUENCIES
-# ============================================================
-
-if not mut_df.empty:
-    variant_mutations = (
-        mut_df
-        .drop_duplicates(
-            subset=[
-                VARIANT_COL,
-                "mutation",
-            ]
-        )
-    )
-
-    variant_mutation_position_freq = (
-        variant_mutations
-        .groupby("absolute_position")
-        .size()
-        .reset_index(
-            name="variant_mutation_count"
-        )
-        .sort_values("absolute_position")
-    )
-
-    variant_mutation_position_freq.to_csv(
-        mutation_dir
-        / "variant_mutation_frequency_by_position.tsv",
-        sep="\t",
-        index=False,
-    )
-
-    plt.figure(figsize=(12, 5))
-    plt.bar(
-        variant_mutation_position_freq[
-            "absolute_position"
-        ],
-        variant_mutation_position_freq[
-            "variant_mutation_count"
-        ],
-    )
-    plt.xlabel("Absolute position")
-    plt.ylabel("Number of variants")
-    plt.title(
-        "Variant-level mutation frequency across positions"
-    )
-    plt.xticks(
-        variant_mutation_position_freq[
-            "absolute_position"
-        ].astype(int)
-    )
-    plt.tight_layout()
-    plt.savefig(
-        mutation_dir
-        / "variant_mutation_frequency_by_position.png",
-        dpi=300,
-    )
-    plt.close()
-
-    variant_mutation_freq = (
-        variant_mutations
-        .groupby("mutation")
-        .size()
-        .reset_index(name="variant_count")
-        .sort_values(
-            "variant_count",
-            ascending=False,
-        )
-    )
-
-    variant_mutation_freq.to_csv(
-        mutation_dir
-        / "variant_mutation_frequency.tsv",
-        sep="\t",
-        index=False,
-    )
-
-    top_n = 30
-    top_variant_mutations = (
-        variant_mutation_freq.head(top_n)
-    )
-
-    plt.figure(figsize=(10, 8))
-    plt.barh(
-        top_variant_mutations[
-            "mutation"
-        ][::-1],
-        top_variant_mutations[
-            "variant_count"
-        ][::-1],
-    )
-    plt.xlabel("Number of variants")
-    plt.ylabel("Mutation")
-    plt.title(
-        f"Top {top_n} variant-level mutations"
-    )
-    plt.tight_layout()
-    plt.savefig(
-        mutation_dir
-        / "top_variant_mutation_frequencies.png",
-        dpi=300,
-    )
-    plt.close()
-
-
-# ============================================================
-# 7. EPITOPE-ASSOCIATED MUTATION FREQUENCIES
-# ============================================================
-
-if not mut_df.empty:
-    epitope_mutations = (
-        mut_df
-        .drop_duplicates(
-            subset=[
-                VARIANT_COL,
-                ALLELE_COL,
-                PEPTIDE_COL,
-                "peptide_start",
-                "peptide_end",
-                "mutation",
-            ]
-        )
-    )
-
-    epitope_mutation_freq = (
-        epitope_mutations
-        .groupby("mutation")
-        .size()
-        .reset_index(
-            name=(
-                "peptide_allele_occurrence_count"
-            )
-        )
-        .sort_values(
-            "peptide_allele_occurrence_count",
-            ascending=False,
-        )
-    )
-
-    epitope_mutation_freq.to_csv(
-        mutation_dir
-        / "epitope_associated_mutation_frequency.tsv",
-        sep="\t",
-        index=False,
-    )
-
-    mutation_population_records = []
-
-    mutation_population_masks = {
-        "all_candidates": pd.Series(
-            True,
-            index=epitope_mutations.index,
-        ),
-        "netmhcpan_pass": (
-            epitope_mutations[
-                "passes_netmhcpan"
-            ].fillna(False)
-        ),
-        "mhcflurry_pass": (
-            epitope_mutations[
-                "passes_mhcflurry"
-            ].fillna(False)
-        ),
-        "both_pass": (
-            epitope_mutations[
-                "passes_both"
-            ].fillna(False)
-        ),
-        "either_pass": (
-            epitope_mutations[
-                "passes_either"
-            ].fillna(False)
-        ),
-    }
-
-    for population, mask in (
-        mutation_population_masks.items()
-    ):
-        subset = epitope_mutations.loc[mask]
-
-        grouped = (
-            subset
-            .groupby("mutation")
-            .size()
-            .reset_index(name="count")
-        )
-
-        grouped["population"] = population
-        mutation_population_records.append(grouped)
-
-    mutation_population_df = pd.concat(
-        mutation_population_records,
-        ignore_index=True,
-    )
-
-    mutation_population_df.to_csv(
-        mutation_dir
-        / "mutation_frequency_by_prediction_population.tsv",
-        sep="\t",
-        index=False,
-    )
-
-
-# ============================================================
-# 8. SELECT CONTINUOUS PREDICTOR COLUMNS
-# ============================================================
-
-mhcflurry_cols = [
-    col for col in MHCFLURRY_SCORE_COLS
-    if col in df_pos.columns
-]
-
-netmhcpan_cols = [
-    col for col in NET_SCORE_COLS
-    if col in df_pos.columns
-]
-
-print("\nContinuous MHCflurry columns:")
-print(mhcflurry_cols)
-
-print("\nContinuous NetMHCpan columns:")
-print(netmhcpan_cols)
-
-for col in mhcflurry_cols + netmhcpan_cols:
-    df_pos[col] = pd.to_numeric(
-        df_pos[col],
-        errors="coerce",
-    )
-
-
-# ============================================================
-# 9. UNIQUE PEPTIDE–ALLELE CORRELATION DATA
-# ============================================================
-
-correlation_columns = (
-    [ALLELE_COL, PEPTIDE_COL]
-    + mhcflurry_cols
-    + netmhcpan_cols
-)
-
-correlation_data = (
-    df_pos[correlation_columns]
-    .drop_duplicates(
-        subset=[
-            ALLELE_COL,
-            PEPTIDE_COL,
-        ]
-    )
-)
-
-print(
-    "\nUnique peptide–allele pairs used for "
-    f"correlation: {len(correlation_data):,}"
-)
-
-
-# ============================================================
-# 10. PREDICTOR CORRELATIONS
-# ============================================================
-
-correlation_records: list[dict[str, object]] = []
-
-for m_col in mhcflurry_cols:
-    for n_col in netmhcpan_cols:
-        temp = correlation_data[
-            [m_col, n_col]
-        ].dropna()
-
-        n_complete = len(temp)
-
-        if n_complete < 3:
-            pearson_r = np.nan
-            spearman_r = np.nan
-        else:
-            pearson_r = temp[m_col].corr(
-                temp[n_col],
-                method="pearson",
-            )
-
-            spearman_r = temp[m_col].corr(
-                temp[n_col],
-                method="spearman",
-            )
-
-        correlation_records.append(
-            {
-                "mhcflurry_column": m_col,
-                "netmhcpan_column": n_col,
-                "n_complete_unique_pairs": n_complete,
-                "pearson_r": pearson_r,
-                "spearman_r": spearman_r,
-            }
-        )
-
-correlation_df = pd.DataFrame(
-    correlation_records
-)
-
-correlation_df.to_csv(
-    OUTDIR
-    / "unique_pair_mhcflurry_netmhcpan_correlations.tsv",
-    sep="\t",
-    index=False,
-)
-
-print("\nMHCflurry versus NetMHCpan correlations:")
-print(correlation_df.to_string(index=False))
-
-
-# ============================================================
-# 11. CORRELATION HEATMAP
-# ============================================================
-
-if (
-    not correlation_df.empty
-    and mhcflurry_cols
-    and netmhcpan_cols
-):
-    heatmap_data = correlation_df.pivot(
-        index="mhcflurry_column",
-        columns="netmhcpan_column",
-        values="spearman_r",
-    )
-
-    plt.figure(
-        figsize=(
-            1.8 * len(netmhcpan_cols) + 4,
-            1.2 * len(mhcflurry_cols) + 3,
-        )
-    )
-
-    plt.imshow(
-        heatmap_data,
-        aspect="auto",
+    image = plt.imshow(
+        correlation,
         vmin=-1,
         vmax=1,
+        aspect="auto",
     )
 
+    plt.colorbar(image, label="Correlation")
+
     plt.xticks(
-        ticks=np.arange(
-            len(heatmap_data.columns)
-        ),
-        labels=heatmap_data.columns,
+        range(len(correlation.columns)),
+        correlation.columns,
         rotation=45,
         ha="right",
     )
 
     plt.yticks(
-        ticks=np.arange(
-            len(heatmap_data.index)
-        ),
-        labels=heatmap_data.index,
+        range(len(correlation.index)),
+        correlation.index,
     )
 
-    plt.colorbar(
-        label="Spearman correlation"
-    )
-
-    plt.title(
-        "MHCflurry versus NetMHCpan correlations\n"
-        "Unique peptide–allele pairs"
-    )
-
-    for i in range(heatmap_data.shape[0]):
-        for j in range(
-            heatmap_data.shape[1]
-        ):
-            value = heatmap_data.iloc[i, j]
+    for row in range(len(correlation.index)):
+        for col in range(len(correlation.columns)):
+            value = correlation.iloc[row, col]
 
             if pd.notna(value):
                 plt.text(
-                    j,
-                    i,
+                    col,
+                    row,
                     f"{value:.2f}",
                     ha="center",
                     va="center",
                 )
 
+    plt.title(title)
     plt.tight_layout()
-    plt.savefig(
-        OUTDIR
-        / "unique_pair_mhcflurry_netmhcpan_spearman_heatmap.png",
-        dpi=300,
-    )
+    plt.savefig(output_path, dpi=300)
     plt.close()
 
 
-# ============================================================
-# 12. SCATTER PLOTS
-# ============================================================
+def save_scatterplot(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    output_path: Path,
+    max_points: int,
+    random_seed: int,
+) -> None:
+    plot_df = df[[x_col, y_col]].dropna()
 
-scatter_dir = (
-    OUTDIR
-    / "mhcflurry_netmhcpan_scatterplots"
-)
-scatter_dir.mkdir(exist_ok=True)
+    if plot_df.empty:
+        print(f"Skipping empty scatter plot: {x_col} vs {y_col}")
+        return
 
-for m_col in mhcflurry_cols:
-    for n_col in netmhcpan_cols:
-        temp = correlation_data[
-            [m_col, n_col]
-        ].dropna()
-
-        if len(temp) < 3:
-            continue
-
-        if len(temp) > MAX_SCATTER_POINTS:
-            plot_data = temp.sample(
-                MAX_SCATTER_POINTS,
-                random_state=RANDOM_SEED,
-            )
-        else:
-            plot_data = temp
-
-        plt.figure(figsize=(6, 5))
-        plt.scatter(
-            plot_data[m_col],
-            plot_data[n_col],
-            alpha=0.25,
-            s=8,
+    if len(plot_df) > max_points:
+        plot_df = plot_df.sample(
+            n=max_points,
+            random_state=random_seed,
         )
-        plt.xlabel(m_col)
-        plt.ylabel(n_col)
-        plt.title(
-            f"{m_col} vs {n_col}\n"
-            f"Unique peptide–allele pairs "
-            f"(plotted n={len(plot_data):,})"
+
+    plt.figure(figsize=(7, 6))
+    plt.scatter(
+        plot_df[x_col],
+        plot_df[y_col],
+        alpha=0.25,
+        s=8,
+    )
+    plt.xlabel(x_col)
+    plt.ylabel(y_col)
+    plt.title(f"{x_col} vs {y_col}")
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+
+
+def mutation_frequency_table(
+    variant_df: pd.DataFrame,
+) -> pd.DataFrame:
+    mutation_df = variant_df.copy()
+
+    mutation_df["mutation"] = (
+        mutation_df["VR_mutation"]
+        .fillna("")
+        .astype(str)
+        .str.split(";")
+    )
+
+    mutation_df = mutation_df.explode("mutation")
+
+    mutation_df["mutation"] = (
+        mutation_df["mutation"]
+        .astype(str)
+        .str.strip()
+    )
+
+    mutation_df = mutation_df[
+        mutation_df["mutation"].ne("")
+        & mutation_df["mutation"].ne("nan")
+        & mutation_df["mutation"].ne("WT")
+    ]
+
+    frequencies = (
+        mutation_df.groupby("mutation")["variant_id"]
+        .nunique()
+        .rename("variant_count")
+        .reset_index()
+        .sort_values("variant_count", ascending=False)
+    )
+
+    n_variants = variant_df["variant_id"].nunique()
+
+    if n_variants > 0:
+        frequencies["variant_percentage"] = (
+            frequencies["variant_count"] / n_variants * 100
         )
-        plt.tight_layout()
+    else:
+        frequencies["variant_percentage"] = np.nan
 
-        safe_m = safe_filename(m_col)
-        safe_n = safe_filename(n_col)
+    return frequencies
 
-        plt.savefig(
-            scatter_dir
-            / f"{safe_m}_vs_{safe_n}.png",
-            dpi=300,
+
+def save_mutation_plot(
+    frequency_df: pd.DataFrame,
+    title: str,
+    output_path: Path,
+    top_n: int,
+) -> None:
+    plot_df = frequency_df.head(top_n).copy()
+
+    if plot_df.empty:
+        print(f"Skipping empty mutation plot: {title}")
+        return
+
+    plot_df = plot_df.sort_values(
+        "variant_count",
+        ascending=True,
+    )
+
+    plt.figure(figsize=(9, max(5, len(plot_df) * 0.3)))
+
+    plt.barh(
+        plot_df["mutation"],
+        plot_df["variant_count"],
+    )
+
+    plt.xlabel("Number of variants")
+    plt.ylabel("Mutation")
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+
+
+def build_score_summary(
+    df: pd.DataFrame,
+    score_columns: list[str],
+) -> pd.DataFrame:
+    rows = []
+
+    for column in score_columns:
+        values = pd.to_numeric(df[column], errors="coerce")
+
+        rows.append(
+            {
+                "score": column,
+                "total_rows": len(df),
+                "non_missing": int(values.notna().sum()),
+                "missing": int(values.isna().sum()),
+                "mean": values.mean(),
+                "standard_deviation": values.std(),
+                "minimum": values.min(),
+                "q25": values.quantile(0.25),
+                "median": values.median(),
+                "q75": values.quantile(0.75),
+                "maximum": values.max(),
+            }
         )
-        plt.close()
+
+    return pd.DataFrame(rows)
 
 
-# ============================================================
-# 13. SCORE DISTRIBUTIONS BY PASS STATUS
-# ============================================================
-
-score_distribution_dir = (
-    OUTDIR / "score_distributions"
-)
-score_distribution_dir.mkdir(exist_ok=True)
-
-score_pass_pairs = [
-    (
-        "netMHCpan_EL_rank",
-        "passes_netmhcpan",
-    ),
-    (
-        "MHCflurry_affinity_percentile",
-        "passes_mhcflurry",
-    ),
-]
-
-for score_col, pass_col in score_pass_pairs:
-    if score_col not in df_pos.columns:
-        continue
-
-    score_data = (
-        df_pos[
-            [
-                ALLELE_COL,
-                PEPTIDE_COL,
-                score_col,
-                pass_col,
-            ]
-        ]
-        .drop_duplicates(
-            subset=[
-                ALLELE_COL,
-                PEPTIDE_COL,
-            ]
-        )
-        .dropna(
-            subset=[score_col, pass_col]
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run simplified descriptive analysis of MHC and BigMHC "
+            "prediction scores."
         )
     )
 
-    score_data.to_csv(
-        score_distribution_dir
-        / f"{safe_filename(score_col)}_by_pass_status.tsv",
+    parser.add_argument(
+        "--i",
+        type=Path,
+        required=True,
+        help="Input combined TSV containing predictor scores.",
+    )
+
+    parser.add_argument(
+        "--outdir",
+        type=Path,
+        required=True,
+        help="Directory for analysis outputs.",
+    )
+
+    parser.add_argument(
+        "--netmhcpan-threshold",
+        type=float,
+        default=2.0,
+        help="Maximum netMHCpan EL rank considered passing. Default: 2.",
+    )
+
+    parser.add_argument(
+        "--mhcflurry-threshold",
+        type=float,
+        default=2.0,
+        help=(
+            "Maximum MHCflurry affinity percentile considered passing. "
+            "Default: 2."
+        ),
+    )
+
+    parser.add_argument(
+        "--top-mutations",
+        type=int,
+        default=25,
+        help="Number of mutations shown in frequency plots. Default: 25.",
+    )
+
+    parser.add_argument(
+        "--scatter-max-points",
+        type=int,
+        default=100_000,
+        help=(
+            "Maximum points included in each scatter plot. "
+            "Large datasets are randomly sampled. Default: 100000."
+        ),
+    )
+
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=42,
+    )
+
+    args = parser.parse_args()
+
+    input_path = args.i.resolve()
+    output_dir = args.outdir.resolve()
+
+    if not input_path.is_file():
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+
+    summary_dir = output_dir / "summary"
+    correlation_dir = output_dir / "correlations"
+    distribution_dir = output_dir / "distributions"
+    mutation_dir = output_dir / "mutations"
+
+    for directory in [
+        summary_dir,
+        correlation_dir,
+        distribution_dir,
+        mutation_dir,
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
+
+    print(f"Reading: {input_path}")
+
+    df = pd.read_csv(
+        input_path,
+        sep="\t",
+        low_memory=False,
+    )
+
+    required_columns = {
+        "variant_id",
+        "peptide",
+        "allele",
+        "VR_mutation",
+        "netMHCpan_EL_rank",
+        "MHCflurry_affinity_percentile",
+        "BigMHC_EL",
+    }
+
+    missing_columns = required_columns - set(df.columns)
+
+    if missing_columns:
+        raise ValueError(
+            f"Input is missing required columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    score_columns = DEFAULT_SCORE_COLUMNS
+
+    for column in score_columns:
+        df[column] = pd.to_numeric(
+            df[column],
+            errors="coerce",
+        )
+
+    # ----------------------------------------------------------
+    # Pass/fail definitions
+    # ----------------------------------------------------------
+
+    df["netmhcpan_pass"] = (
+        df["netMHCpan_EL_rank"].notna()
+        & (
+            df["netMHCpan_EL_rank"]
+            <= args.netmhcpan_threshold
+        )
+    )
+
+    df["mhcflurry_pass"] = (
+        df["MHCflurry_affinity_percentile"].notna()
+        & (
+            df["MHCflurry_affinity_percentile"]
+            <= args.mhcflurry_threshold
+        )
+    )
+
+    df["pass_either"] = (
+        df["netmhcpan_pass"]
+        | df["mhcflurry_pass"]
+    )
+
+    df["pass_both"] = (
+        df["netmhcpan_pass"]
+        & df["mhcflurry_pass"]
+    )
+
+    # ----------------------------------------------------------
+    # Dataset summary
+    # ----------------------------------------------------------
+
+    n_rows = len(df)
+    n_variants = df["variant_id"].nunique()
+    n_peptides = df["peptide"].nunique()
+
+    n_peptide_allele_pairs = (
+        df[["peptide", "allele"]]
+        .drop_duplicates()
+        .shape[0]
+    )
+
+    dataset_summary = pd.DataFrame(
+        [
+            {
+                "total_rows": n_rows,
+                "unique_variants": n_variants,
+                "unique_peptides": n_peptides,
+                "unique_peptide_allele_pairs": n_peptide_allele_pairs,
+                "netmhcpan_passing_rows": int(
+                    df["netmhcpan_pass"].sum()
+                ),
+                "mhcflurry_passing_rows": int(
+                    df["mhcflurry_pass"].sum()
+                ),
+                "passing_either_rows": int(
+                    df["pass_either"].sum()
+                ),
+                "passing_both_rows": int(
+                    df["pass_both"].sum()
+                ),
+                "passing_either_percentage": (
+                    df["pass_either"].mean() * 100
+                ),
+                "passing_both_percentage": (
+                    df["pass_both"].mean() * 100
+                ),
+            }
+        ]
+    )
+
+    dataset_summary.to_csv(
+        summary_dir / "dataset_summary.tsv",
         sep="\t",
         index=False,
     )
 
-    passed = score_data.loc[
-        score_data[pass_col],
-        score_col,
-    ]
+    score_summary = build_score_summary(
+        df,
+        score_columns,
+    )
 
-    failed = score_data.loc[
-        ~score_data[pass_col],
-        score_col,
-    ]
+    score_summary.to_csv(
+        summary_dir / "score_summary.tsv",
+        sep="\t",
+        index=False,
+    )
 
-    plt.figure(figsize=(8, 5))
+    # ----------------------------------------------------------
+    # Pass rates by allele
+    # ----------------------------------------------------------
 
-    if not failed.empty:
-        plt.hist(
-            failed,
-            bins=50,
-            alpha=0.5,
-            label="Failed",
+    allele_summary = (
+        df.groupby("allele", dropna=False)
+        .agg(
+            total_rows=("variant_id", "size"),
+            unique_variants=("variant_id", "nunique"),
+            unique_peptides=("peptide", "nunique"),
+            netmhcpan_passing=("netmhcpan_pass", "sum"),
+            mhcflurry_passing=("mhcflurry_pass", "sum"),
+            passing_either=("pass_either", "sum"),
+            passing_both=("pass_both", "sum"),
+        )
+        .reset_index()
+    )
+
+    allele_summary["passing_either_percentage"] = (
+        allele_summary["passing_either"]
+        / allele_summary["total_rows"]
+        * 100
+    )
+
+    allele_summary["passing_both_percentage"] = (
+        allele_summary["passing_both"]
+        / allele_summary["total_rows"]
+        * 100
+    )
+
+    allele_summary.to_csv(
+        summary_dir / "pass_rate_by_allele.tsv",
+        sep="\t",
+        index=False,
+    )
+
+    # ----------------------------------------------------------
+    # Optional peptide-length summary
+    # ----------------------------------------------------------
+
+    length_column = None
+
+    if "k" in df.columns:
+        length_column = "k"
+        df[length_column] = pd.to_numeric(
+            df[length_column],
+            errors="coerce",
         )
 
-    if not passed.empty:
-        plt.hist(
-            passed,
-            bins=50,
-            alpha=0.5,
-            label="Passed",
+    elif "peptide_length" in df.columns:
+        length_column = "peptide_length"
+        df[length_column] = pd.to_numeric(
+            df[length_column],
+            errors="coerce",
         )
 
-    plt.xlabel(score_col)
-    plt.ylabel("Unique peptide–allele pairs")
-    plt.title(
-        f"{score_col} distribution by pass status"
+    if length_column is not None:
+        length_summary = (
+            df.groupby(length_column, dropna=False)
+            .agg(
+                total_rows=("variant_id", "size"),
+                unique_variants=("variant_id", "nunique"),
+                unique_peptides=("peptide", "nunique"),
+                passing_either=("pass_either", "sum"),
+            )
+            .reset_index()
+        )
+
+        length_summary["passing_either_percentage"] = (
+            length_summary["passing_either"]
+            / length_summary["total_rows"]
+            * 100
+        )
+
+        length_summary.to_csv(
+            summary_dir / "pass_rate_by_peptide_length.tsv",
+            sep="\t",
+            index=False,
+        )
+
+    # ----------------------------------------------------------
+    # Correlations
+    # ----------------------------------------------------------
+
+    correlation_data = df[score_columns].copy()
+
+    pearson_correlation = correlation_data.corr(
+        method="pearson"
     )
-    plt.legend()
-    plt.tight_layout()
 
-    plt.savefig(
-        score_distribution_dir
-        / f"{safe_filename(score_col)}_by_pass_status.png",
-        dpi=300,
+    spearman_correlation = correlation_data.corr(
+        method="spearman"
     )
-    plt.close()
+
+    pearson_correlation.to_csv(
+        correlation_dir / "pearson_correlation.tsv",
+        sep="\t",
+    )
+
+    spearman_correlation.to_csv(
+        correlation_dir / "spearman_correlation.tsv",
+        sep="\t",
+    )
+
+    save_correlation_heatmap(
+        pearson_correlation,
+        "Pearson correlation between prediction scores",
+        correlation_dir / "pearson_correlation_heatmap.png",
+    )
+
+    save_correlation_heatmap(
+        spearman_correlation,
+        "Spearman correlation between prediction scores",
+        correlation_dir / "spearman_correlation_heatmap.png",
+    )
+
+    score_pairs = [
+        (
+            "netMHCpan_EL_rank",
+            "MHCflurry_affinity_percentile",
+        ),
+        (
+            "netMHCpan_EL_rank",
+            "BigMHC_EL",
+        ),
+        (
+            "MHCflurry_affinity_percentile",
+            "BigMHC_EL",
+        ),
+    ]
+
+    for x_col, y_col in score_pairs:
+        save_scatterplot(
+            df=df,
+            x_col=x_col,
+            y_col=y_col,
+            output_path=(
+                correlation_dir
+                / f"{x_col}_vs_{y_col}.png"
+            ),
+            max_points=args.scatter_max_points,
+            random_seed=args.random_seed,
+        )
+
+    # ----------------------------------------------------------
+    # Score distributions
+    # ----------------------------------------------------------
+
+    for score_column in score_columns:
+        save_histogram(
+            values=df[score_column],
+            title=f"Distribution of {score_column}",
+            xlabel=score_column,
+            output_path=(
+                distribution_dir
+                / f"{score_column}_distribution.png"
+            ),
+        )
+
+        save_histogram(
+            values=df.loc[
+                df["pass_either"],
+                score_column,
+            ],
+            title=f"{score_column}: rows passing either predictor",
+            xlabel=score_column,
+            output_path=(
+                distribution_dir
+                / f"{score_column}_passed_distribution.png"
+            ),
+        )
+
+        save_histogram(
+            values=df.loc[
+                ~df["pass_either"],
+                score_column,
+            ],
+            title=f"{score_column}: rows not passing either predictor",
+            xlabel=score_column,
+            output_path=(
+                distribution_dir
+                / f"{score_column}_failed_distribution.png"
+            ),
+        )
+
+    # ----------------------------------------------------------
+    # Variant-level mutation analysis
+    # ----------------------------------------------------------
+
+    variants = (
+        df.groupby("variant_id", as_index=False)
+        .agg(
+            VR_mutation=("VR_mutation", "first"),
+            pass_either=("pass_either", "any"),
+            pass_both=("pass_both", "any"),
+            netmhcpan_pass=("netmhcpan_pass", "any"),
+            mhcflurry_pass=("mhcflurry_pass", "any"),
+        )
+    )
+
+    variant_pass_summary = pd.DataFrame(
+        [
+            {
+                "total_variants": len(variants),
+                "variants_passing_either": int(
+                    variants["pass_either"].sum()
+                ),
+                "variants_not_passing_either": int(
+                    (~variants["pass_either"]).sum()
+                ),
+                "variants_passing_both": int(
+                    variants["pass_both"].sum()
+                ),
+                "variants_passing_either_percentage": (
+                    variants["pass_either"].mean() * 100
+                ),
+            }
+        ]
+    )
+
+    variant_pass_summary.to_csv(
+        summary_dir / "variant_pass_summary.tsv",
+        sep="\t",
+        index=False,
+    )
+
+    mutation_groups = {
+        "overall": variants,
+        "passed": variants[variants["pass_either"]],
+        "failed": variants[~variants["pass_either"]],
+    }
+
+    for group_name, group_df in mutation_groups.items():
+        frequencies = mutation_frequency_table(group_df)
+
+        frequencies.to_csv(
+            mutation_dir
+            / f"mutation_frequency_{group_name}.tsv",
+            sep="\t",
+            index=False,
+        )
+
+        save_mutation_plot(
+            frequency_df=frequencies,
+            title=(
+                f"Most frequent mutations: {group_name} variants"
+            ),
+            output_path=(
+                mutation_dir
+                / f"mutation_frequency_{group_name}.png"
+            ),
+            top_n=args.top_mutations,
+        )
+
+    print(f"Analysis complete. Outputs written to: {output_dir}")
+
+    return 0
 
 
-print(
-    f"\nDone. Outputs saved to: {OUTDIR}"
-)
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+"""
+python analysis/descriptive_analysis.py \
+  --i data/output/bigmhc/VR5_V3__k9/predictions_mapped.tsv \
+  --outdir data/output/descriptive_analysis/VR5_V3__k9
+"""
