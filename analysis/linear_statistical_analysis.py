@@ -48,6 +48,7 @@ def main() -> None:
 
     required_columns = {
         "variant_id",
+        "allele",
         "peptide_id",
         "VR_mutation",
         "netMHCpan_EL_rank_pass",
@@ -82,7 +83,7 @@ def main() -> None:
     # Prevent duplicate peptide rows within the same variant being counted twice.
     peptide_level = (
         df.groupby(
-            ["variant_id", "peptide_id"],
+            ["variant_id", "allele", "peptide_id"],
             as_index=False,
         )
         .agg(
@@ -188,9 +189,8 @@ if __name__ == "__main__":
     main()
 
 """
-python scripts/statistical_analysis.py \
+python analysis/linear_statistical_analysis.py \
   --input data/output/bigmhc/VR5_V3__k9/predictions_mapped.tsv \
   --output-dir data/output/linear_regression \
   --min-prevalence 0.01
-
 """
