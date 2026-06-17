@@ -10,7 +10,7 @@ INPUT_FILE = (
     "predictions_mapped.tsv"
 )
 
-MIN_PREVALENCE = 0.05
+MIN_PREVALENCE = 0.005
 EPSILON = 1e-6
 
 
@@ -81,6 +81,11 @@ df["log_affinity_score"] = -np.log10(
     )
 )
 
+# Convert actual WT labels to empty mutation lists.
+df["peptide_mutation"] = (
+    df["peptide_mutation"]
+    .replace({"WT": "", "wt": ""})
+)
 
 # One-hot encode peptide-level mutations.
 mutation_matrix = (
@@ -89,6 +94,17 @@ mutation_matrix = (
     .str.join("|")
     .str.get_dummies(sep="|")
 )
+
+mutation_matrix = mutation_matrix.drop(
+    columns=["WT"],
+    errors="ignore",
+)
+
+mutation_prevalence = mutation_matrix.mean(axis=0)
+
+retained_mutations = mutation_prevalence[
+    mutation_prevalence >= 0.005
+].index
 
 
 # Keep mutations present in at least the specified proportion of peptide rows.
@@ -148,6 +164,13 @@ result = model.fit(
 
 
 print(result.summary())
+
+print(f"Retained mutations: {len(retained_mutations)}")
+print(
+    mutation_prevalence.loc[retained_mutations]
+    .sort_values(ascending=False)
+    .head(20)
+)
 
 
 # Extract fixed-effect coefficients and confidence intervals.
