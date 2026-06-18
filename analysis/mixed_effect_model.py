@@ -269,8 +269,7 @@ presentation_results = (
             "percentile_ratio_ci_lower",
             "percentile_ratio_ci_upper",
             "p_value",
-            "mutation_prevalence",
-            "effect_direction",
+            "mutation_prevalence"
         ]
     ]
 )
