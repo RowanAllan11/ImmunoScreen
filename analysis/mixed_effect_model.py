@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-
+from pathlib import Path   
 
 INPUT_FILE = (
     "data/output/bigmhc/VR5_V3__k9/"
@@ -223,9 +223,10 @@ results = results.sort_values(
     ascending=True,
 )
 
-output_dir = (
+output_dir = Path(
     "data/output/mixed_effects/VR5_V3__k9/"
 )
+
 output_dir.mkdir(parents=True, exist_ok=True)
 
 results.to_csv(
