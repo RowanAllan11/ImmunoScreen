@@ -204,23 +204,39 @@ results["mutation_prevalence"] = results["term"].map(
     mutation_prevalence
 )
 
+results["percentile_ratio"] = 10 ** (-results["coefficient"])
+
+results["percentile_percent_change"] = (
+    results["percentile_ratio"] - 1
+) * 100
+
+results["percentile_ratio_ci_lower"] = (
+    10 ** (-results["ci_upper_95"])
+)
+
+results["percentile_ratio_ci_upper"] = (
+    10 ** (-results["ci_lower_95"])
+)
+
 results = results.sort_values(
     "p_value",
     ascending=True,
 )
 
+output_dir = (
+    "data/output/mixed_effects/VR5_V3__k9/"
+)
+output_dir.mkdir(parents=True, exist_ok=True)
 
 results.to_csv(
-    "data/output/mixed_effects/"
-    "peptide_mixed_effects_mhcflurry.tsv",
+    output_dir / "peptide_mixed_effects_mhcflurry.tsv",
     sep="\t",
     index=False,
 )
 
 
 with open(
-    "data/output/mixed_effects/"
-    "peptide_mixed_effects_mhcflurry_summary.txt",
+    output_dir / "peptide_mixed_effects_mhcflurry_summary.txt",
     "w",
     encoding="utf-8",
 ) as handle:
@@ -229,3 +245,37 @@ with open(
 
 print("\nTop mutation results:")
 print(results.head(20).to_string(index=False))
+
+
+
+presentation_results = (
+    results.loc[results["term"] != "const"]
+    .assign(
+        absolute_coefficient=lambda x: x["coefficient"].abs()
+    )
+    .sort_values(
+        "absolute_coefficient",
+        ascending=False,
+    )
+    .head(20)
+    [
+        [
+            "term",
+            "coefficient",
+            "ci_lower_95",
+            "ci_upper_95",
+            "percentile_ratio",
+            "percentile_ratio_ci_lower",
+            "percentile_ratio_ci_upper",
+            "p_value",
+            "mutation_prevalence",
+            "effect_direction",
+        ]
+    ]
+)
+
+presentation_results.to_csv(
+    output_dir / "top_effects.tsv",
+    sep="\t",
+    index=False,
+)
