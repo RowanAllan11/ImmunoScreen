@@ -35,7 +35,7 @@ df = pd.read_csv(
 sampled_variants = (
     df["variant_id"]
     .drop_duplicates()
-    .sample(n=5_000, random_state=42)
+    .sample(n=10_000, random_state=42)
 )
 
 df = df[df["variant_id"].isin(sampled_variants)].copy()
