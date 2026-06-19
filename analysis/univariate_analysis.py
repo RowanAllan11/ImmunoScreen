@@ -935,8 +935,8 @@ if __name__ == "__main__":
 
 
 """
-python scripts/univariate_mutation_mixed_models.py \
-  --input data/output/combined/combined_predictions.tsv \
+python analysis/univariate_analysis.py \
+  --input data/output/bigmhc/VR5_V3__k9/predictions_mapped.tsv \
   --outdir data/output/univariate_mixed_models \
   --outcome MHCflurry_affinity_percentile \
   --transform neglog10_percentile \
@@ -955,5 +955,4 @@ python scripts/univariate_mutation_mixed_models.py \
   --min-variants 50 \
   --min-rows 100 \
   --min-windows 2
-  
   """
