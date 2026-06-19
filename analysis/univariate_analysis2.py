@@ -2,6 +2,14 @@ from pathlib import Path
 import re
 import warnings
 
+import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+
+from joblib import Parallel, delayed
+
 import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
@@ -155,18 +163,9 @@ print(f"Mutations tested: {len(mutations_to_test):,}")
 # FIT ONE MODEL PER MUTATION
 # ============================================================
 
-results = []
-
-for number, mutation in enumerate(mutations_to_test, start=1):
-
+def fit_mutation(mutation):
     position = get_position(mutation)
 
-    print(
-        f"[{number}/{len(mutations_to_test)}] "
-        f"{mutation}"
-    )
-
-    # Only keep peptide windows that overlap the mutation position.
     subset = df[
         (df["start"] <= position)
         & (df["end"] >= position)
@@ -212,10 +211,8 @@ for number, mutation in enumerate(mutations_to_test, start=1):
 
     if subset["mutation_present"].nunique() < 2:
         result["status"] = "no_contrast"
-        results.append(result)
-        continue
+        return result
 
-    # Window is included as a fixed categorical effect.
     formula = "outcome ~ mutation_present + C(window_id)"
 
     try:
@@ -236,12 +233,10 @@ for number, mutation in enumerate(mutations_to_test, start=1):
                 disp=False,
             )
 
-        coefficient = fitted.params["mutation_present"]
-        standard_error = fitted.bse["mutation_present"]
         confidence_interval = fitted.conf_int().loc["mutation_present"]
 
-        result["coefficient"] = coefficient
-        result["std_error"] = standard_error
+        result["coefficient"] = fitted.params["mutation_present"]
+        result["std_error"] = fitted.bse["mutation_present"]
         result["p_value"] = fitted.pvalues["mutation_present"]
         result["ci_lower"] = confidence_interval.iloc[0]
         result["ci_upper"] = confidence_interval.iloc[1]
@@ -261,47 +256,61 @@ for number, mutation in enumerate(mutations_to_test, start=1):
         result["status"] = "model_error"
         result["warning"] = f"{type(error).__name__}: {error}"
 
-    results.append(result)
+    return result
+
+if __name__ == "__main__":
+
+    N_JOBS = 8
+
+    results = Parallel(
+        n_jobs=N_JOBS,
+        backend="loky",
+        verbose=10,
+    )(
+        delayed(fit_mutation)(mutation)
+        for mutation in mutations_to_test
+    )
+
 
 
 # ============================================================
 # FDR CORRECTION
 # ============================================================
 
-results_df = pd.DataFrame(results)
+    results_df = pd.DataFrame(results)
 
-results_df["fdr_bh"] = np.nan
-results_df["significant_fdr_0_05"] = False
+    results_df["fdr_bh"] = np.nan
+    results_df["significant_fdr_0_05"] = False
 
-valid = results_df["p_value"].notna()
+    valid = results_df["p_value"].notna()
 
-if valid.any():
-    rejected, adjusted_pvalues, _, _ = multipletests(
-        results_df.loc[valid, "p_value"],
-        method="fdr_bh",
-        alpha=0.05,
+    if valid.any():
+        rejected, adjusted_pvalues, _, _ = multipletests(
+            results_df.loc[valid, "p_value"],
+            method="fdr_bh",
+            alpha=0.05,
+        )
+
+        results_df.loc[valid, "fdr_bh"] = adjusted_pvalues
+        results_df.loc[valid, "significant_fdr_0_05"] = rejected
+
+    results_df = results_df.sort_values(
+        ["significant_fdr_0_05", "fdr_bh"],
+        ascending=[False, True],
     )
 
-    results_df.loc[valid, "fdr_bh"] = adjusted_pvalues
-    results_df.loc[valid, "significant_fdr_0_05"] = rejected
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-results_df = results_df.sort_values(
-    ["significant_fdr_0_05", "fdr_bh"],
-    ascending=[False, True],
-)
+    results_df.to_csv(
+        OUTPUT_FILE,
+        sep="\t",
+        index=False,
+    )
 
-OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-results_df.to_csv(
-    OUTPUT_FILE,
-    sep="\t",
-    index=False,
-)
-
-print()
-print(f"Successful models: {(results_df['status'] == 'success').sum()}")
-print(
-    "FDR-significant mutations: "
-    f"{results_df['significant_fdr_0_05'].sum()}"
-)
-print(f"Saved to: {OUTPUT_FILE}")
+    print()
+    print(f"Successful models: {(results_df['status'] == 'success').sum()}")
+    print(
+        "FDR-significant mutations: "
+        f"{results_df['significant_fdr_0_05'].sum()}"
+    )
+    print(f"Saved to: {OUTPUT_FILE}")
