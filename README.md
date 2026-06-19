@@ -218,7 +218,6 @@ python scripts/run_bigmhc.py \
   --m el \
   --t 2 \
   --d cpu \
-  --jobs 8
 ```
 
 #### Output
