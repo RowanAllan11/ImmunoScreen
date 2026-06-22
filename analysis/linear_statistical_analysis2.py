@@ -146,15 +146,12 @@ def create_variant_summaries(
     return summaries
 
 
-def fit_mutation_model(
-    allele_df: pd.DataFrame,
-    outcome: str,
+def build_mutation_design_matrix(
+    model_df: pd.DataFrame,
     min_prevalence: float,
     min_mutation_count: int,
-) -> tuple[sm.regression.linear_model.RegressionResultsWrapper, pd.DataFrame]:
-    """Fit an allele-specific OLS model with HC3 robust standard errors."""
-    model_df = allele_df.dropna(subset=[outcome]).copy()
-
+) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+    """Create the filtered one-hot mutation design matrix."""
     mutation_matrix = (
         model_df["VR_mutation"]
         .apply(split_mutations)
@@ -169,7 +166,6 @@ def fit_mutation_model(
         (mutation_counts >= min_mutation_count)
         & (mutation_prevalence >= min_prevalence)
     ]
-
     mutation_matrix = mutation_matrix[retained]
 
     if mutation_matrix.shape[1] == 0:
@@ -178,10 +174,8 @@ def fit_mutation_model(
             "Reduce --min-prevalence or --min-mutation-count."
         )
 
-    # Remove any constant mutation columns.
     mutation_matrix = mutation_matrix.loc[
-        :,
-        mutation_matrix.nunique(axis=0) > 1,
+        :, mutation_matrix.nunique(axis=0) > 1
     ]
 
     if mutation_matrix.shape[1] == 0:
@@ -189,48 +183,255 @@ def fit_mutation_model(
             "No variable mutation columns remained after filtering."
         )
 
-    X = mutation_matrix.astype(float)
-    X = sm.add_constant(X, has_constant="add")
+    X = sm.add_constant(
+        mutation_matrix.astype(float),
+        has_constant="add",
+    )
+    return X, mutation_counts, mutation_prevalence
 
-    y = model_df[outcome].astype(float)
 
-    model = sm.OLS(y, X).fit(cov_type="HC3")
+def count_outcome_diagnostics(y: pd.Series) -> dict[str, object]:
+    """Check whether an outcome is suitable for Poisson regression."""
+    y = pd.to_numeric(y, errors="coerce").dropna().astype(float)
+
+    mean_count = float(y.mean())
+    variance_count = float(y.var(ddof=1)) if len(y) > 1 else np.nan
+    variance_to_mean = (
+        variance_count / mean_count if mean_count > 0 else np.nan
+    )
+
+    is_nonnegative = bool((y >= 0).all())
+    is_integer = bool(np.isclose(y, np.round(y)).all())
+    zero_fraction = float((y == 0).mean())
+
+    if not is_nonnegative or not is_integer:
+        recommendation = "invalid_for_poisson"
+    elif mean_count == 0:
+        recommendation = "all_counts_zero"
+    elif variance_to_mean > 1.5:
+        recommendation = "possible_overdispersion"
+    elif variance_to_mean < 0.75:
+        recommendation = "possible_underdispersion"
+    else:
+        recommendation = "mean_variance_reasonably_similar"
+
+    return {
+        "n_observations": int(len(y)),
+        "mean": mean_count,
+        "variance": variance_count,
+        "variance_to_mean_ratio": variance_to_mean,
+        "minimum": float(y.min()),
+        "maximum": float(y.max()),
+        "zero_fraction": zero_fraction,
+        "is_nonnegative": is_nonnegative,
+        "is_integer_valued": is_integer,
+        "raw_poisson_check": recommendation,
+    }
+
+
+def fit_mutation_model(
+    allele_df: pd.DataFrame,
+    outcome: str,
+    model_type: str,
+    min_prevalence: float,
+    min_mutation_count: int,
+) -> tuple[object, pd.DataFrame, pd.DataFrame]:
+    """Fit an allele-specific OLS, Poisson, or binomial mutation model."""
+    model_df = allele_df.dropna(subset=[outcome]).copy()
+    y = pd.to_numeric(model_df[outcome], errors="coerce")
+    valid = y.notna()
+    model_df = model_df.loc[valid].copy()
+    y = y.loc[valid].astype(float)
+
+    X, mutation_counts, mutation_prevalence = (
+        build_mutation_design_matrix(
+            model_df=model_df,
+            min_prevalence=min_prevalence,
+            min_mutation_count=min_mutation_count,
+        )
+    )
+
+    diagnostics = count_outcome_diagnostics(y)
+
+    if model_type == "binomial":
+        if outcome != "passing_count":
+            raise ValueError(
+                "Binomial regression is only valid for --outcome passing_count."
+            )
+
+        trials = pd.to_numeric(
+            model_df["peptide_count"], errors="coerce"
+        ).astype(float)
+        failures = trials - y
+
+        if (trials <= 0).any():
+            raise ValueError(
+                "Binomial regression requires peptide_count > 0 for every variant."
+            )
+        if (y < 0).any() or (failures < 0).any():
+            raise ValueError(
+                "Binomial regression requires 0 <= passing_count <= peptide_count."
+            )
+        if not np.isclose(y, np.round(y)).all():
+            raise ValueError("passing_count must be integer-valued.")
+        if not np.isclose(trials, np.round(trials)).all():
+            raise ValueError("peptide_count must be integer-valued.")
+
+        proportion = y / trials
+        model = sm.GLM(
+            proportion,
+            X,
+            family=sm.families.Binomial(),
+            freq_weights=trials,
+        ).fit(cov_type="HC3")
+
+        statistic_name = "z_value"
+        effect_name = "odds_ratio"
+        effect = np.exp(model.params)
+        effect_ci = np.exp(model.conf_int())
+
+        pearson_dispersion = float(model.pearson_chi2 / model.df_resid)
+        deviance_dispersion = float(model.deviance / model.df_resid)
+
+        diagnostics.update(
+            {
+                "model_type": "binomial",
+                "total_successes": float(y.sum()),
+                "total_trials": float(trials.sum()),
+                "overall_pass_proportion": float(y.sum() / trials.sum()),
+                "minimum_trials": float(trials.min()),
+                "maximum_trials": float(trials.max()),
+                "pearson_chi2": float(model.pearson_chi2),
+                "residual_df": float(model.df_resid),
+                "pearson_dispersion": pearson_dispersion,
+                "deviance": float(model.deviance),
+                "deviance_dispersion": deviance_dispersion,
+                "aic": float(model.aic),
+                "model_dispersion_flag": (
+                    "overdispersed"
+                    if pearson_dispersion > 1.5
+                    else "underdispersed"
+                    if pearson_dispersion < 0.75
+                    else "approximately_binomial"
+                ),
+            }
+        )
+
+    elif model_type == "poisson":
+        if not diagnostics["is_nonnegative"]:
+            raise ValueError(
+                f"Poisson regression requires non-negative counts, but "
+                f"'{outcome}' contains negative values."
+            )
+        if not diagnostics["is_integer_valued"]:
+            raise ValueError(
+                f"Poisson regression requires integer-valued counts, but "
+                f"'{outcome}' contains non-integer values."
+            )
+        if diagnostics["mean"] == 0:
+            raise ValueError(
+                f"Poisson regression cannot be fitted because '{outcome}' "
+                "contains only zeros."
+            )
+
+        model = sm.GLM(
+            y,
+            X,
+            family=sm.families.Poisson(),
+        ).fit(cov_type="HC3")
+
+        statistic_name = "z_value"
+        effect_name = "incidence_rate_ratio"
+        effect = np.exp(model.params)
+        effect_ci = np.exp(model.conf_int())
+
+        pearson_dispersion = float(
+            model.pearson_chi2 / model.df_resid
+        )
+        deviance_dispersion = float(
+            model.deviance / model.df_resid
+        )
+
+        diagnostics.update(
+            {
+                "model_type": "poisson",
+                "pearson_chi2": float(model.pearson_chi2),
+                "residual_df": float(model.df_resid),
+                "pearson_dispersion": pearson_dispersion,
+                "deviance": float(model.deviance),
+                "deviance_dispersion": deviance_dispersion,
+                "aic": float(model.aic),
+                "model_dispersion_flag": (
+                    "overdispersed"
+                    if pearson_dispersion > 1.5
+                    else "underdispersed"
+                    if pearson_dispersion < 0.75
+                    else "approximately_equidispersed"
+                ),
+            }
+        )
+    else:
+        model = sm.OLS(y, X).fit(cov_type="HC3")
+        statistic_name = "t_value"
+        effect_name = None
+        effect = None
+        effect_ci = None
+
+        diagnostics.update(
+            {
+                "model_type": "ols",
+                "r_squared": float(model.rsquared),
+                "adjusted_r_squared": float(model.rsquared_adj),
+                "aic": float(model.aic),
+                "bic": float(model.bic),
+                "model_dispersion_flag": "not_applicable",
+            }
+        )
 
     confidence_intervals = model.conf_int()
-
     results = pd.DataFrame(
         {
             "term": model.params.index,
             "coefficient": model.params.values,
             "std_error": model.bse.values,
-            "t_value": model.tvalues.values,
+            statistic_name: model.tvalues.values,
             "p_value": model.pvalues.values,
             "ci_lower": confidence_intervals[0].values,
             "ci_upper": confidence_intervals[1].values,
         }
     )
 
-    results["mutation_count"] = results["term"].map(
-        mutation_counts
-    )
+    results["mutation_count"] = results["term"].map(mutation_counts)
     results["mutation_prevalence"] = results["term"].map(
         mutation_prevalence
     )
 
-    # Interpretation for outcomes measured on a -log10 scale.
-    #
-    # A coefficient of 0.30 corresponds to:
-    # 10^0.30 = approximately 2-fold improvement in percentile/rank.
-    results["fold_improvement"] = 10 ** results["coefficient"]
-    results["fold_improvement_ci_lower"] = 10 ** results["ci_lower"]
-    results["fold_improvement_ci_upper"] = 10 ** results["ci_upper"]
-
-    # Equivalent ratio on the original percentile/rank scale.
-    # Values below 1 indicate a lower/better percentile.
-    results["percentile_ratio"] = 10 ** (-results["coefficient"])
+    if model_type in {"poisson", "binomial"}:
+        results[effect_name] = effect.values
+        results[f"{effect_name}_ci_lower"] = effect_ci[0].values
+        results[f"{effect_name}_ci_upper"] = effect_ci[1].values
+        if model_type == "poisson":
+            results["percent_change_in_expected_count"] = (
+                100 * (results[effect_name] - 1)
+            )
+        else:
+            results["percent_change_in_odds"] = (
+                100 * (results[effect_name] - 1)
+            )
+    elif outcome in {
+        "strongest_score",
+        "mean_top3_score",
+        "mean_all_score",
+        "strongest_wt_delta",
+        "mean_top3_wt_delta",
+        "mean_all_wt_delta",
+    }:
+        results["fold_improvement"] = 10 ** results["coefficient"]
+        results["fold_improvement_ci_lower"] = 10 ** results["ci_lower"]
+        results["fold_improvement_ci_upper"] = 10 ** results["ci_upper"]
+        results["percentile_ratio"] = 10 ** (-results["coefficient"])
 
     mutation_rows = results["term"] != "const"
-
     results["q_value"] = np.nan
 
     if mutation_rows.any():
@@ -240,14 +441,13 @@ def fit_mutation_model(
         )[1]
 
     results["significant_fdr_05"] = results["q_value"] < 0.05
-
     results = results.sort_values(
         ["q_value", "p_value"],
         na_position="last",
     )
 
-    return model, results
-
+    diagnostics_df = pd.DataFrame([diagnostics])
+    return model, results, diagnostics_df
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -296,6 +496,15 @@ def main() -> None:
         default="mean_top3_score",
     )
     parser.add_argument(
+        "--model",
+        choices=["auto", "ols", "poisson", "binomial"],
+        default="auto",
+        help=(
+            "Regression model. 'auto' uses binomial for passing_count "
+            "and OLS for all other outcomes."
+        ),
+    )
+    parser.add_argument(
         "--pass-threshold",
         type=float,
         default=2.0,
@@ -339,6 +548,19 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    resolved_model = args.model
+    if resolved_model == "auto":
+        resolved_model = (
+            "binomial" if args.outcome == "passing_count" else "ols"
+        )
+
+    if resolved_model in {"poisson", "binomial"} and args.outcome != "passing_count":
+        raise ValueError(
+            f"{resolved_model.capitalize()} regression is restricted to "
+            "--outcome passing_count. WT count differences can be negative "
+            "and continuous score summaries are not count outcomes."
+        )
 
     if (
         args.outcome.endswith("wt_delta")
@@ -524,25 +746,34 @@ def main() -> None:
             index=False,
         )
 
-        model, results = fit_mutation_model(
+        model, results, diagnostics = fit_mutation_model(
             allele_df=allele_df,
             outcome=args.outcome,
+            model_type=resolved_model,
             min_prevalence=args.min_prevalence,
             min_mutation_count=args.min_mutation_count,
         )
 
         results.insert(0, "allele", allele)
-        results.insert(1, "outcome", args.outcome)
-        results.insert(2, "score_column", args.score_column)
+        results.insert(1, "model_type", resolved_model)
+        results.insert(2, "outcome", args.outcome)
+        results.insert(3, "score_column", args.score_column)
+        diagnostics.insert(0, "allele", allele)
+        diagnostics.insert(1, "outcome", args.outcome)
 
         results.to_csv(
-            allele_output / "linear_regression_results.tsv",
+            allele_output / f"{resolved_model}_regression_results.tsv",
+            sep="\t",
+            index=False,
+        )
+        diagnostics.to_csv(
+            allele_output / "outcome_and_dispersion_diagnostics.tsv",
             sep="\t",
             index=False,
         )
 
         with open(
-            allele_output / "linear_regression_summary.txt",
+            allele_output / f"{resolved_model}_regression_summary.txt",
             "w",
             encoding="utf-8",
         ) as handle:
@@ -551,7 +782,21 @@ def main() -> None:
         print(f"\nAllele: {allele}")
         print(f"Variants modelled: {int(model.nobs):,}")
         print(f"Outcome: {args.outcome}")
-        print(f"R-squared: {model.rsquared:.4f}")
+        print(f"Model: {resolved_model}")
+        print(
+            f"Raw count mean: {diagnostics.loc[0, 'mean']:.4f}; "
+            f"variance: {diagnostics.loc[0, 'variance']:.4f}; "
+            "variance/mean: "
+            f"{diagnostics.loc[0, 'variance_to_mean_ratio']:.4f}"
+        )
+        if resolved_model in {"poisson", "binomial"}:
+            print(
+                "Pearson dispersion: "
+                f"{diagnostics.loc[0, 'pearson_dispersion']:.4f} "
+                f"({diagnostics.loc[0, 'model_dispersion_flag']})"
+            )
+        else:
+            print(f"R-squared: {model.rsquared:.4f}")
         print(
             "Mutation terms retained: "
             f"{len(results) - 1:,}"
@@ -567,8 +812,8 @@ if __name__ == "__main__":
 """
 python analysis/linear_statistical_analysis2.py \
   --score-column netMHCpan_EL_rank \
-  --outcome mean_top3_score \
-  --output-dir data/output/linear_regression/VR5_V3__k9_top3_net \
+  --outcome passing_count \
+  --output-dir data/output/linear_regression/VR5_V3__k9_count_net 
 """
 
 """
@@ -581,7 +826,16 @@ python analysis/linear_statistical_analysis2.py \
 """
 python analysis/linear_statistical_analysis2.py \
   --score-column netMHCpan_EL_rank \
-  --outcome mean_top3_wt_delta \
+  --outcome passing_count_wt_difference \
   --include-wt-relative \
-  --output-dir data/output/linear_regression/VR5_V3__k9_top3_net_wt_relative
+  --output-dir data/output/linear_regression/VR5_V3__k9_count_net_wt_relative
+"""
+
+"""
+python analysis/linear_statistical_analysis2.py \
+  --variant-input data/output/bigmhc/VR5_V3__k9/predictions_mapped.tsv \
+  --score-column netMHCpan_EL_rank \
+  --outcome passing_count \
+  --model binomial \
+  --output-dir data/output/linear_regression/VR5_V3__k9_count_net_binomial
 """
