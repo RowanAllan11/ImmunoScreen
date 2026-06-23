@@ -16,6 +16,7 @@ required_columns = {
     "peptide_mutation",
     "netMHCpan_EL_rank",
     "MHCflurry_affinity_percentile",
+    "VR_mutation"
 }
 
 
@@ -109,30 +110,37 @@ def main():
         .agg("_".join, axis=1)
     )
 
-    df["mutation_list"] = df["peptide_mutation"].apply(split_mutations)
+    df["variant_mutation_list"] = df["VR_mutation"].apply(split_mutations)
+    df["peptide_mutation_list"] = df["peptide_mutation"].apply(split_mutations)
 
     all_results = []
 
     for allele, allele_df in df.groupby("allele", sort=True):
         allele_df = allele_df.copy()
 
+        variant_mutations = (
+            allele_df[
+                ["variant_id", "variant_mutation_list"]
+            ]
+            .drop_duplicates("variant_id")
+        )
+
         all_mutations = sorted(
             {
                 mutation
-                for mutation_list in allele_df["mutation_list"]
-                for mutation in mutation_list
+                for values in variant_mutations["variant_mutation_list"]
+                for mutation in values
             }
         )
 
         retained_mutations = []
 
         for mutation in all_mutations:
-            positive_variants = allele_df.loc[
-                allele_df["mutation_list"].apply(
-                    lambda values: mutation in values
-                ),
-                "variant_id",
-            ].nunique()
+            positive_variants = variant_mutations[
+                "variant_mutation_list"
+            ].apply(
+                lambda values, m=mutation: m in values
+            ).sum()
 
             if positive_variants >= args.min_variants:
                 retained_mutations.append(mutation)
@@ -147,7 +155,9 @@ def main():
         }
 
         for mutation, column in mutation_to_column.items():
-            allele_df[column] = allele_df["mutation_list"].apply(
+            allele_df[column] = allele_df[
+                "peptide_mutation_list"
+            ].apply(
                 lambda values, m=mutation: int(m in values)
             )
 
@@ -261,9 +271,9 @@ if __name__ == "__main__":
     main()
 
 """
-python multivariable_peptide_ols.py \
-  --input data/output/bigmhc/.tsv \
-  --output data/output/peptide_level/netmhcpan_multivariable_ols.tsv \
+python analysis/multivariable_peptide_ols.py \
+  --input data/output/bigmhc/AAV9_WT__k9/predictions_mapped.tsv \
+  --output data/output/peptide_level/AAV9_WT__k9/netmhcpan_multivariable_ols.tsv \
   --score-column netMHCpan_EL_rank \
-  --min-variants 50
+  --min-variants 20
 """
