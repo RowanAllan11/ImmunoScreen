@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import statsmodels.formula.api as smf
+import statsmodels.api as sm
 from statsmodels.stats.multitest import multipletests
 
 
@@ -16,20 +16,27 @@ required_columns = {
     "peptide_mutation",
     "netMHCpan_EL_rank",
     "MHCflurry_affinity_percentile",
-    "VR_mutation"
 }
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Run a multivariable peptide-level OLS model containing all retained "
-            "mutation indicators, adjusting for peptide window and clustering "
-            "standard errors by variant."
+            "Fit a multivariable peptide-level OLS model with all retained "
+            "mutations, peptide-window fixed effects, and variant-clustered "
+            "standard errors."
         )
     )
-    parser.add_argument("--input", required=True, help="Input TSV file.")
-    parser.add_argument("--output", required=True, help="Output results TSV.")
+    parser.add_argument(
+        "--input",
+        required=True,
+        help="Input predictions_mapped.tsv file.",
+    )
+    parser.add_argument(
+        "--output",
+        required=True,
+        help="Output results TSV file.",
+    )
     parser.add_argument(
         "--score-column",
         default="MHCflurry_affinity_percentile",
@@ -37,13 +44,22 @@ def parse_args():
             "MHCflurry_affinity_percentile",
             "netMHCpan_EL_rank",
         ],
-        help="Percentile/rank column to analyse.",
+        help="Percentile/rank outcome column.",
     )
     parser.add_argument(
-        "--min-variants",
-        type=int,
-        default=20,
-        help="Minimum number of unique variants carrying a mutation.",
+        "--min-prevalence",
+        type=float,
+        default=0.005,
+        help=(
+            "Minimum proportion of peptide rows containing a mutation. "
+            "For example, 0.005 means 0.5%% of peptide rows."
+        ),
+    )
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=1e-6,
+        help="Lower clipping value before log10 transformation.",
     )
     parser.add_argument(
         "--window-columns",
@@ -51,40 +67,70 @@ def parse_args():
         default=["start", "end", "k"],
         help="Columns defining the exact peptide window.",
     )
+    parser.add_argument(
+        "--sample-variants",
+        type=int,
+        default=None,
+        help="Optional number of variants to sample before modelling.",
+    )
+    parser.add_argument(
+        "--random-state",
+        type=int,
+        default=42,
+        help="Random seed used when sampling variants.",
+    )
     return parser.parse_args()
 
 
 def split_mutations(value):
+    """Convert a semicolon-separated mutation string into a list."""
     if pd.isna(value):
         return []
 
-    text = str(value).strip()
-
-    if text in {"", "WT", "None", "nan"}:
-        return []
-
-    return [mutation.strip() for mutation in text.split(";") if mutation.strip()]
-
-
-def safe_column_name(mutation, index):
-    return f"mutation_{index}"
+    return [
+        mutation.strip()
+        for mutation in str(value).split(";")
+        if mutation.strip()
+    ]
 
 
 def main():
     args = parse_args()
 
-    df = pd.read_csv(args.input, sep="\t")
+    df = pd.read_csv(
+        args.input,
+        sep="\t",
+        low_memory=False,
+    )
 
     missing = required_columns - set(df.columns)
     missing_window = set(args.window_columns) - set(df.columns)
 
     if missing:
-        raise ValueError(f"Missing required columns: {sorted(missing)}")
+        raise ValueError(
+            f"Input file is missing required columns: {sorted(missing)}"
+        )
 
     if missing_window:
-        raise ValueError(f"Missing window columns: {sorted(missing_window)}")
+        raise ValueError(
+            f"Input file is missing window columns: {sorted(missing_window)}"
+        )
 
-    df = df.copy()
+    if args.sample_variants is not None:
+        variants = df["variant_id"].drop_duplicates()
+
+        if args.sample_variants > len(variants):
+            raise ValueError(
+                f"--sample-variants is {args.sample_variants}, but only "
+                f"{len(variants)} unique variants are available."
+            )
+
+        sampled_variants = variants.sample(
+            n=args.sample_variants,
+            random_state=args.random_state,
+        )
+
+        df = df[df["variant_id"].isin(sampled_variants)].copy()
 
     df[args.score_column] = pd.to_numeric(
         df[args.score_column],
@@ -93,172 +139,208 @@ def main():
 
     df = df.dropna(
         subset=[
-            args.score_column,
             "variant_id",
             "allele",
+            "peptide_id",
+            args.score_column,
         ]
+    ).copy()
+
+    # Larger transformed values indicate stronger predicted presentation.
+    df["log_score"] = -np.log10(
+        df[args.score_column].clip(lower=args.epsilon)
     )
 
-    df = df[df[args.score_column] > 0].copy()
-
-    # Higher values mean stronger predicted presentation.
-    df["score"] = -np.log10(df[args.score_column])
-
-    df["window_id"] = (
-        df[args.window_columns]
-        .astype(str)
-        .agg("_".join, axis=1)
+    # Treat WT as carrying no peptide-level mutations.
+    df["peptide_mutation"] = df["peptide_mutation"].replace(
+        {
+            "WT": "",
+            "wt": "",
+        }
     )
 
-    df["variant_mutation_list"] = df["VR_mutation"].apply(split_mutations)
-    df["peptide_mutation_list"] = df["peptide_mutation"].apply(split_mutations)
-
-    all_results = []
+    output_tables = []
 
     for allele, allele_df in df.groupby("allele", sort=True):
-        allele_df = allele_df.copy()
+        allele_df = allele_df.reset_index(drop=True).copy()
 
-        variant_mutations = (
-            allele_df[
-                ["variant_id", "variant_mutation_list"]
-            ]
-            .drop_duplicates("variant_id")
+        # Same prevalence logic as the supplied mixed-effects script:
+        # prevalence = proportion of peptide rows containing each mutation.
+        mutation_matrix = (
+            allele_df["peptide_mutation"]
+            .apply(split_mutations)
+            .str.join("|")
+            .str.get_dummies(sep="|")
         )
 
-        all_mutations = sorted(
-            {
-                mutation
-                for values in variant_mutations["variant_mutation_list"]
-                for mutation in values
-            }
+        mutation_matrix = mutation_matrix.drop(
+            columns=["WT", "wt", ""],
+            errors="ignore",
         )
 
-        retained_mutations = []
+        mutation_prevalence = mutation_matrix.mean(axis=0)
 
-        for mutation in all_mutations:
-            positive_variants = variant_mutations[
-                "variant_mutation_list"
-            ].apply(
-                lambda values, m=mutation: m in values
-            ).sum()
-
-            if positive_variants >= args.min_variants:
-                retained_mutations.append(mutation)
+        retained_mutations = mutation_prevalence[
+            mutation_prevalence >= args.min_prevalence
+        ].index.tolist()
 
         if not retained_mutations:
-            print(f"{allele}: no mutations passed the prevalence filter.")
-            continue
-
-        mutation_to_column = {
-            mutation: safe_column_name(mutation, index)
-            for index, mutation in enumerate(retained_mutations)
-        }
-
-        for mutation, column in mutation_to_column.items():
-            allele_df[column] = allele_df[
-                "peptide_mutation_list"
-            ].apply(
-                lambda values, m=mutation: int(m in values)
+            print(
+                f"{allele}: no mutations passed prevalence "
+                f"{args.min_prevalence:.6f}."
             )
 
-        mutation_columns = list(mutation_to_column.values())
-
-        # Remove constant mutation columns.
-        mutation_columns = [
-            column
-            for column in mutation_columns
-            if allele_df[column].nunique() > 1
-        ]
-
-        if not mutation_columns:
-            print(f"{allele}: all retained mutation columns were constant.")
+            if not mutation_prevalence.empty:
+                print("Highest mutation prevalences:")
+                print(
+                    mutation_prevalence
+                    .sort_values(ascending=False)
+                    .head(20)
+                    .to_string()
+                )
             continue
 
-        formula = (
-            "score ~ "
-            + " + ".join(mutation_columns)
-            + " + C(window_id)"
+        mutation_matrix = mutation_matrix[
+            retained_mutations
+        ].astype(float)
+
+        # Exact peptide-window fixed effects.
+        window_id = (
+            allele_df[args.window_columns]
+            .astype(str)
+            .agg("_".join, axis=1)
         )
 
-        try:
-            model = smf.ols(
-                formula,
-                data=allele_df,
-            ).fit(
-                cov_type="cluster",
-                cov_kwds={"groups": allele_df["variant_id"]},
-            )
-        except Exception as exc:
-            print(f"{allele}: model failed: {exc}")
-            continue
+        window_matrix = pd.get_dummies(
+            window_id,
+            prefix="window",
+            drop_first=True,
+            dtype=float,
+        )
 
-        reverse_map = {
-            column: mutation
-            for mutation, column in mutation_to_column.items()
-        }
+        X = pd.concat(
+            [
+                mutation_matrix.reset_index(drop=True),
+                window_matrix.reset_index(drop=True),
+            ],
+            axis=1,
+        )
 
-        for column in mutation_columns:
-            ci_lower, ci_upper = model.conf_int().loc[column]
-            mutation = reverse_map[column]
+        X = sm.add_constant(
+            X,
+            has_constant="add",
+        ).astype(float)
 
-            all_results.append(
+        y = allele_df["log_score"].astype(float)
+
+        model = sm.OLS(
+            endog=y,
+            exog=X,
+        )
+
+        result = model.fit(
+            cov_type="cluster",
+            cov_kwds={
+                "groups": allele_df["variant_id"],
+            },
+        )
+
+        confidence_intervals = result.conf_int(alpha=0.05)
+
+        rows = []
+
+        for mutation in retained_mutations:
+            rows.append(
                 {
                     "allele": allele,
                     "score_column": args.score_column,
-                    "mutation": mutation,
-                    "coefficient": model.params[column],
-                    "std_error": model.bse[column],
-                    "t_value": model.tvalues[column],
-                    "p_value": model.pvalues[column],
-                    "ci_lower": ci_lower,
-                    "ci_upper": ci_upper,
-                    "mutation_positive_rows": int(allele_df[column].sum()),
-                    "mutation_positive_variants": allele_df.loc[
-                        allele_df[column] == 1,
-                        "variant_id",
-                    ].nunique(),
-                    "n_rows": int(model.nobs),
+                    "term": mutation,
+                    "coefficient": result.params[mutation],
+                    "std_error": result.bse[mutation],
+                    "t_value": result.tvalues[mutation],
+                    "p_value": result.pvalues[mutation],
+                    "ci_lower_95": confidence_intervals.loc[mutation, 0],
+                    "ci_upper_95": confidence_intervals.loc[mutation, 1],
+                    "mutation_prevalence": mutation_prevalence[mutation],
+                    "mutation_row_count": int(
+                        mutation_matrix[mutation].sum()
+                    ),
+                    "n_rows": int(result.nobs),
                     "n_variants": allele_df["variant_id"].nunique(),
-                    "n_mutations_in_model": len(mutation_columns),
-                    "r_squared": model.rsquared,
-                    "adjusted_r_squared": model.rsquared_adj,
+                    "n_mutations_in_model": len(retained_mutations),
+                    "r_squared": result.rsquared,
+                    "adjusted_r_squared": result.rsquared_adj,
                 }
             )
 
+        allele_results = pd.DataFrame(rows)
+
+        allele_results["q_value"] = multipletests(
+            allele_results["p_value"],
+            method="fdr_bh",
+        )[1]
+
+        allele_results["significant_fdr_05"] = (
+            allele_results["q_value"] < 0.05
+        )
+
+        # Because the outcome is -log10(percentile):
+        # percentile ratio = mutated percentile / reference percentile.
+        allele_results["percentile_ratio"] = (
+            10 ** (-allele_results["coefficient"])
+        )
+
+        allele_results["percentile_percent_change"] = (
+            allele_results["percentile_ratio"] - 1
+        ) * 100
+
+        allele_results["percentile_ratio_ci_lower"] = (
+            10 ** (-allele_results["ci_upper_95"])
+        )
+
+        allele_results["percentile_ratio_ci_upper"] = (
+            10 ** (-allele_results["ci_lower_95"])
+        )
+
+        output_tables.append(allele_results)
+
         print(
-            f"{allele}: fitted {len(mutation_columns)} mutations "
-            f"using {int(model.nobs)} peptide rows."
+            f"{allele}: retained {len(retained_mutations)} mutations "
+            f"from {len(allele_df):,} peptide rows."
         )
 
-    results_df = pd.DataFrame(all_results)
-
-    if not results_df.empty:
-        results_df["q_value"] = np.nan
-
-        for allele, index in results_df.groupby("allele").groups.items():
-            p_values = results_df.loc[index, "p_value"]
-            valid = p_values.notna()
-
-            if valid.any():
-                valid_index = p_values.index[valid]
-                results_df.loc[valid_index, "q_value"] = multipletests(
-                    p_values.loc[valid_index],
-                    method="fdr_bh",
-                )[1]
-
-        results_df["significant_fdr_05"] = (
-            results_df["q_value"] < 0.05
+        print("Top retained mutation prevalences:")
+        print(
+            mutation_prevalence.loc[retained_mutations]
+            .sort_values(ascending=False)
+            .head(20)
+            .to_string()
         )
 
-        results_df = results_df.sort_values(
-            ["allele", "q_value", "p_value"],
-            na_position="last",
+    if not output_tables:
+        raise ValueError(
+            "No allele produced a fitted model. "
+            "Inspect the printed mutation prevalences or reduce "
+            "--min-prevalence."
         )
+
+    results = pd.concat(
+        output_tables,
+        ignore_index=True,
+    )
+
+    results = results.sort_values(
+        ["allele", "q_value", "p_value"],
+        ascending=True,
+    )
 
     output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-    results_df.to_csv(
+    results.to_csv(
         output_path,
         sep="\t",
         index=False,
@@ -271,9 +353,9 @@ if __name__ == "__main__":
     main()
 
 """
-python analysis/multivariable_peptide_ols.py \
-  --input data/output/bigmhc/AAV9_WT__k9/predictions_mapped.tsv \
+python multivariable_peptide_ols_row_prevalence.py \
+  --input data/output/bigmhc/VR5_V3__k9/predictions_mapped.tsv \
   --output data/output/peptide_level/AAV9_WT__k9/netmhcpan_multivariable_ols.tsv \
   --score-column netMHCpan_EL_rank \
-  --min-variants 20
+  --min-prevalence 0.005
 """
