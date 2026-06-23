@@ -8,14 +8,14 @@ import pandas as pd
 # Configuration
 # ------------------------------------------------------------------
 
-RESULTS_FILE = Path("data/output/linear_regression/VR5_V3__k9_top3_net/H2-D_b/linear_regression_results.tsv")
-OUTPUT_DIR = Path("data/output/linear_regression/VR5_V3__k9_top3_net/plots")
+RESULTS_FILE = Path("data/output/linear_regression/VR5_V3__k9_count_net_binomial/binomial_regression_results.tsv")
+OUTPUT_DIR = Path("data/output/linear_regression/VR5_V3__k9_count_net_binomial/plots")
 
 ALLELE = "H2-D*b"
-OUTCOME = "mean_top3_score"
+OUTCOME = "passing_count"
 SCORE_COLUMN = "netMHCpan_EL_rank"
 
-N_EACH_SIDE = 5
+N_EACH_SIDE = 10
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
