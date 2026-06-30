@@ -256,3 +256,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+"""
+Command to run the pipeline:
+python scripts/run_pipeline.py --config config/vr5_v3_k9.yaml
+"""
