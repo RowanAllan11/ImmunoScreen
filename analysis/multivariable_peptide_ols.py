@@ -353,7 +353,7 @@ if __name__ == "__main__":
     main()
 
 """
-python multivariable_peptide_ols_row_prevalence.py \
+python analysis/multivariable_peptide_ols.py \
   --input data/output/bigmhc/VR5_V3__k9/predictions_mapped.tsv \
   --output data/output/peptide_level/AAV9_WT__k9/netmhcpan_multivariable_ols.tsv \
   --score-column netMHCpan_EL_rank \

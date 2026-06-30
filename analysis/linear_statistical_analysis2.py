@@ -825,9 +825,11 @@ python analysis/linear_statistical_analysis2.py \
 
 """
 python analysis/linear_statistical_analysis2.py \
+  --variant-input data/output/bigmhc/VR5_V3__k9/predictions_mapped.tsv \
   --score-column netMHCpan_EL_rank \
   --outcome passing_count_wt_difference \
   --include-wt-relative \
+  --model ols \
   --output-dir data/output/linear_regression/VR5_V3__k9_count_net_wt_relative
 """
 

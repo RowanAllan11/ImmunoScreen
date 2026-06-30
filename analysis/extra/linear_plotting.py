@@ -8,14 +8,14 @@ import pandas as pd
 # Configuration
 # ------------------------------------------------------------------
 
-RESULTS_FILE = Path("data/output/linear_regression/VR5_V3__k9_count_net_binomial/binomial_regression_results.tsv")
-OUTPUT_DIR = Path("data/output/linear_regression/VR5_V3__k9_count_net_binomial/plots")
+RESULTS_FILE = Path("data/output/linear_regression/VR5_V3__k9_count_net_wt_relative/H2-D_b/linear_regression_results.tsv")
+OUTPUT_DIR = Path("data/output/linear_regression/VR5_V3__k9_count_net_wt_relative/plots")
 
 ALLELE = "H2-D*b"
-OUTCOME = "passing_count"
+OUTCOME = "passing_count_wt_difference"
 SCORE_COLUMN = "netMHCpan_EL_rank"
 
-N_EACH_SIDE = 10
+N_EACH_SIDE = 5
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -26,15 +26,35 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 results = pd.read_csv(RESULTS_FILE, sep="\t")
 
-subset = results.loc[
+results.rename(
+    columns={
+        "coefficient": "coefficient",
+        "std_error": "std_error",
+        "t_value": "t_value",
+        "p_value": "p_value",
+        "q_value": "q_value",
+        "ci_lower_95": "ci_lower",
+        "ci_upper_95": "ci_upper",
+    },
+    inplace=True,
+)
+
+filter_mask = (
     (results["allele"] == ALLELE)
-    & (results["outcome"] == OUTCOME)
     & (results["score_column"] == SCORE_COLUMN)
     & (results["term"] != "intercept")
-].copy()
+)
 
-# Optional: restrict the plot to FDR-significant mutations
-subset = subset.loc[subset["significant_fdr_05"]].copy()
+if OUTCOME is not None:
+    if "outcome" not in results.columns:
+        raise ValueError(
+            "OUTCOME was specified, but the results file has no "
+            "'outcome' column."
+        )
+
+    filter_mask &= results["outcome"] == OUTCOME
+
+subset = results.loc[filter_mask].copy()
 
 subset = subset.dropna(
     subset=[
@@ -109,13 +129,19 @@ selected_columns = [
     if column in plot_data.columns
 ]
 
+outcome_label = (
+    f"{OUTCOME}_"
+    if OUTCOME is not None
+    else ""
+)
+
 output_table = (
     plot_data[selected_columns]
     .sort_values("coefficient", ascending=False)
 )
 
 table_path = OUTPUT_DIR / (
-    f"{ALLELE}_{OUTCOME}_{SCORE_COLUMN}_"
+    f"{ALLELE}_{outcome_label}{SCORE_COLUMN}_"
     f"top_bottom_{N_EACH_SIDE}_coefficients.tsv"
 ).replace("*", "").replace("/", "_")
 
@@ -164,9 +190,16 @@ ax.set_yticklabels(plot_data["term"])
 ax.set_xlabel("Mutation coefficient with 95% confidence interval")
 ax.set_ylabel("Mutation")
 
+title_parts = [ALLELE]
+
+if OUTCOME is not None:
+    title_parts.append(OUTCOME)
+
+title_parts.append(SCORE_COLUMN)
+
 ax.set_title(
-    f"Mutation coefficients\n"
-    f"{ALLELE} | {OUTCOME} | {SCORE_COLUMN}"
+    "Mutation coefficients\n"
+    + " | ".join(title_parts)
 )
 
 ax.grid(axis="x", alpha=0.25)
@@ -174,7 +207,7 @@ ax.grid(axis="x", alpha=0.25)
 plt.tight_layout()
 
 plot_path = OUTPUT_DIR / (
-    f"{ALLELE}_{OUTCOME}_{SCORE_COLUMN}_"
+    f"{ALLELE}_{outcome_label}{SCORE_COLUMN}_"
     f"top_bottom_{N_EACH_SIDE}_forest_plot.png"
 ).replace("*", "").replace("/", "_")
 

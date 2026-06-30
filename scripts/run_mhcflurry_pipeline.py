@@ -8,7 +8,6 @@ import sys
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.netmhcpan import _read_alleles
 from src.mhcflurry import (
     _write_unique_peptides_allele_input,
     run_mhcflurry_predict,
@@ -22,7 +21,7 @@ def main() -> int:
 
     ap.add_argument("--peptides", type=Path, required=True)
     ap.add_argument("--peptide-map", type=Path, required=True)
-    ap.add_argument("--alleles", type=Path, required=True)
+    ap.add_argument("--alleles", nargs="+", required=True, help="MHCflurry allele names")
 
     ap.add_argument("--outdir", type=Path, default=REPO_ROOT / "data/output/mhcflurry")
 
@@ -35,7 +34,6 @@ def main() -> int:
 
     peptides_tsv = args.peptides.resolve()
     peptide_map_tsv = args.peptide_map.resolve()
-    alleles_path = args.alleles.resolve()
 
     run_label = peptides_tsv.parent.name
 
@@ -46,12 +44,12 @@ def main() -> int:
     raw_mhcflurry_tsv = run_dir / "predictions.tsv"
     mapped_tsv = run_dir / "predictions_mapped.tsv"
 
-    alleles = _read_alleles(alleles_path)
+    alleles = [
+        allele.strip()
+        for allele in args.alleles
+        if allele.strip()
+    ]
 
-    if not alleles:
-        raise ValueError(
-            f"No alleles were read from: {alleles_path}"
-        )
 
     n_input_rows = _write_unique_peptides_allele_input(
         unique_peptides_tsv=peptides_tsv,

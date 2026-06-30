@@ -9,6 +9,7 @@ dependencies:
   - pytorch
   - scikit-learn
   - matplotlib
+  - pyyaml
   - psutil
   - pip:
       - pytest

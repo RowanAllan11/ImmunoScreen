@@ -11,13 +11,6 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_NETMHC_PATH = REPO_ROOT / "tools" / "netMHCpan-4.2" / "netMHCpan"
 
-
-# Reads alleles from a text file (one allele per line), uses for netMHCpan -a argument
-def _read_alleles(path: Path) -> List[str]:
-    with path.open("r", encoding="utf-8") as fh:
-        return [line.strip() for line in fh if line.strip() and not line.strip().startswith("#")]
-
-
 def read_unique_peptides(peptides_tsv: Path, *, kmer: int) -> List[str]:
     df = pd.read_csv(peptides_tsv, sep="\t", dtype=str)
     if "peptide" not in df.columns or "k" not in df.columns:
@@ -47,31 +40,53 @@ def run_netmhcpan_for_k(
     *,
     peptides_tsv: Path,
     k: int,
-    alleles_path: Path,
+    alleles: list[str],
     netmhcpan_path: Path,
     outdir: Path,
     output_format: str = "xls",
-    extra: List[str] = (),
+    extra: list[str] | tuple[str, ...] = (),
 ) -> Path:
+    """
+    Run netMHCpan for one peptide length.
+
+    Alleles are supplied directly as a list and passed to netMHCpan's
+    comma-separated -a argument.
+    """
     if not peptides_tsv.exists():
         raise FileNotFoundError(peptides_tsv)
-    if not alleles_path.exists():
-        raise FileNotFoundError(alleles_path)
+
     if not netmhcpan_path.exists():
         raise FileNotFoundError(netmhcpan_path)
 
-    peptides = read_unique_peptides(peptides_tsv, kmer=int(k))
-    if not peptides:
-        raise ValueError(f"No peptides found for k={k}")
+    peptides = read_unique_peptides(
+        peptides_tsv,
+        kmer=int(k),
+    )
 
-    alleles = _read_alleles(alleles_path)
+    if not peptides:
+        raise ValueError(
+            f"No peptides found for k={k} in {peptides_tsv}"
+        )
+
+    alleles = [
+        str(allele).strip()
+        for allele in alleles
+        if str(allele).strip()
+    ]
+
+    # Preserve order while removing duplicates.
+    alleles = list(dict.fromkeys(alleles))
+
     if not alleles:
-        raise ValueError("No alleles found")
+        raise ValueError(
+            "No valid netMHCpan alleles were supplied."
+        )
 
     allele_arg = ",".join(alleles)
 
     outdir.mkdir(parents=True, exist_ok=True)
-    prefix = Path(peptides_tsv).parent.name
+
+    prefix = peptides_tsv.parent.name
     out_prefix = outdir / f"{prefix}_{k}mer"
     tmp_peptides = out_prefix.with_suffix(".peptides.tmp.txt")
 
@@ -80,32 +95,80 @@ def run_netmhcpan_for_k(
     elif output_format == "txt":
         out_path = out_prefix.with_suffix(".netmhcpan.txt")
     else:
-        raise ValueError("output_format must be 'xls' or 'txt'")
+        raise ValueError(
+            "output_format must be either 'xls' or 'txt'."
+        )
 
-    _write_temp_peptides(peptides, tmp_peptides)
+    _write_temp_peptides(
+        peptides,
+        tmp_peptides,
+    )
 
-    cmd = [str(netmhcpan_path), "-p", "-a", allele_arg, "-f", str(tmp_peptides)]
+    cmd = [
+        str(netmhcpan_path),
+        "-p",
+        "-a",
+        allele_arg,
+        "-f",
+        str(tmp_peptides),
+    ]
+
     if output_format == "xls":
-        cmd += ["-xls", "-xlsfile", str(out_path)]
-    cmd += list(extra or ())
+        cmd.extend(
+            [
+                "-xls",
+                "-xlsfile",
+                str(out_path),
+            ]
+        )
+
+    cmd.extend(list(extra or ()))
 
     env = os.environ.copy()
     env.setdefault("TMPDIR", "/tmp")
 
-    # write output (stdout) directly to out_path for txt mode; xls flag handles writing when requested
-    if output_format == "txt":
-        with out_path.open("w", encoding="utf-8") as out_f:
-            proc = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, text=True, env=env)
-    else:
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-
-    if proc.returncode != 0:
-        raise RuntimeError(f"netMHCpan failed (returncode={proc.returncode}):\n{proc.stderr}")
+    print(f"Running: {' '.join(cmd)}")
 
     try:
-        tmp_peptides.unlink()
-    except OSError:
-        pass
+        if output_format == "txt":
+            with out_path.open(
+                "w",
+                encoding="utf-8",
+            ) as out_f:
+                proc = subprocess.run(
+                    cmd,
+                    stdout=out_f,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    env=env,
+                )
+        else:
+            proc = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+            )
+
+        if proc.returncode != 0:
+            raise RuntimeError(
+                "netMHCpan failed "
+                f"(return code {proc.returncode}):\n"
+                f"{proc.stderr}"
+            )
+
+    finally:
+        try:
+            tmp_peptides.unlink()
+        except OSError:
+            pass
+
+    if not out_path.exists():
+        raise RuntimeError(
+            "netMHCpan completed without creating the expected "
+            f"output file: {out_path}"
+        )
 
     return out_path
 

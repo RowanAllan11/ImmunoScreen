@@ -50,3 +50,7 @@ hpc/logs/**
 logs/**
 *.o
 *.e
+
+# R
+.Rhistory
+.RData
