@@ -210,8 +210,6 @@ def run_bigmhc(
         str(settings["threads"]),
         "--d",
         settings["device"],
-        "--jobs",
-        str(settings.get("jobs", 1)),
         "--outdir",
         str(output_root / "bigmhc"),
     ]
