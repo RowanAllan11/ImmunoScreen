@@ -95,7 +95,7 @@ def run_mhcflurry(
         "--affinity-percentile-threshold",
         str(settings["affinity_percentile_threshold"]),
         "--outdir",
-        str(output_root / "mhcflurry" / run_label),
+        str(output_root / "mhcflurry"),
     ]
 
     run_command(command)
@@ -129,7 +129,7 @@ def run_netmhcpan(
         "--el-rank-threshold",
         str(settings["el_rank_threshold"]),
         "--outdir",
-        str(output_root / "netmhcpan" / run_label),
+        str(output_root / "netmhcpan"),
     ]
 
     if settings.get("deduplicate", True):
@@ -176,7 +176,7 @@ def run_combination(
         "--wt-vr",
         settings["wild_type_variable_region"],
         "--outdir",
-        str(output_root / "combined" / run_label),
+        str(output_root / "combined"),
     ]
 
     run_command(command)
@@ -213,7 +213,7 @@ def run_bigmhc(
         "--jobs",
         str(settings.get("jobs", 1)),
         "--outdir",
-        str(output_root / "bigmhc" / run_label),
+        str(output_root / "bigmhc"),
     ]
 
     run_command(command)
