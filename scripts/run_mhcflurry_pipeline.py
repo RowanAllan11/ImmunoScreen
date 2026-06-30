@@ -84,7 +84,7 @@ def main() -> int:
         peptide_map_tsv=peptide_map_tsv,
         mhcflurry_tsv=raw_mhcflurry_tsv,
         affinity_percentile_threshold=args.affinity_percentile_threshold,
-        alleles_path=alleles,
+        alleles=alleles,
     )
 
     out_df.to_csv(
