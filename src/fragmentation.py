@@ -302,10 +302,24 @@ def fragment_to_tables(
     }
 
 
-def _filter_stop_codon_sequences(inputs, stats: dict[str, int]):
-    """Remove protein sequences containing a stop-codon marker."""
+def _filter_variable_region_stops(
+    inputs,
+    *,
+    var_start: int | None,
+    var_end: int | None,
+    stats: dict[str, int],
+):
+    if var_start is None or var_end is None:
+        yield from inputs
+        return
+
     for inp in inputs:
-        if "*" in inp.sequence:
+        sequence = str(inp.sequence).strip()
+
+        # 1-based inclusive coordinates
+        variable_region = sequence[var_start - 1:var_end]
+
+        if "*" in variable_region:
             stats["filtered"] += 1
             continue
 

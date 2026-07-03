@@ -7,7 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.fragmentation import iter_fasta_inputs, iter_table_inputs, fragment_to_tables, _filter_stop_codon_sequences
+from src.fragmentation import iter_fasta_inputs, iter_table_inputs, fragment_to_tables, _filter_variable_region_stops
 from src.naming import make_run_label
 
 
@@ -96,7 +96,13 @@ def main() -> int:
         metadata_cols = list(args.metadata_cols)
         
     stop_codon_stats = {"filtered": 0}
-    inputs = _filter_stop_codon_sequences(inputs, stop_codon_stats)
+
+    inputs = _filter_variable_region_stops(
+        inputs,
+        var_start=args.var_start,
+        var_end=args.var_end,
+        stats=stop_codon_stats,
+    )
 
     outputs = fragment_to_tables(
         inputs,
@@ -108,6 +114,14 @@ def main() -> int:
         var_end=args.var_end,
         var_mode=args.var_mode,
     )
+    
+    if stop_codon_stats["filtered"] > 0:
+        print(
+            f"Filtered {stop_codon_stats['filtered']:,} sequence(s) "
+            f"containing '*' within variable region "
+            f"{args.var_start}-{args.var_end}."
+        )
+
     for k, p in outputs.items():
         print(f"wrote {k}: {p}")
 
