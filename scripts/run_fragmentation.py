@@ -7,7 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.fragmentation import iter_fasta_inputs, iter_table_inputs, fragment_to_tables
+from src.fragmentation import iter_fasta_inputs, iter_table_inputs, fragment_to_tables, _filter_stop_codon_sequences
 from src.naming import make_run_label
 
 
@@ -94,6 +94,9 @@ def main() -> int:
             sep=args.sep,
         )
         metadata_cols = list(args.metadata_cols)
+        
+    stop_codon_stats = {"filtered": 0}
+    inputs = _filter_stop_codon_sequences(inputs, stop_codon_stats)
 
     outputs = fragment_to_tables(
         inputs,

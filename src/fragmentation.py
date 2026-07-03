@@ -300,3 +300,13 @@ def fragment_to_tables(
         "unique_peptides": unique_peptides_path,
         "peptide_variant_map": peptide_variant_map_path,
     }
+
+
+def _filter_stop_codon_sequences(inputs, stats: dict[str, int]):
+    """Remove protein sequences containing a stop-codon marker."""
+    for inp in inputs:
+        if "*" in inp.sequence:
+            stats["filtered"] += 1
+            continue
+
+        yield inp
