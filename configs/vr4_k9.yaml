@@ -4,7 +4,7 @@ run:
   overwrite: true
 
 fragmentation:
-  enabled: true
+  enabled: false
   input_type: csv
   input: data/input/libraries/VR4/VR4_v1_library.csv
 
@@ -17,7 +17,7 @@ fragmentation:
     - 9
 
   variable_region:
-    enabled: true
+    enabled: false
     start: 450
     end: 470
     mode: overlap
@@ -34,19 +34,21 @@ mhc:
       netmhcpan: H-2-Dd
 
 mhcflurry:
-  enabled: true
+  enabled: false
   affinity_percentile_threshold: 2.0
   presentation_percentile_threshold: null
   batch_size: 100000
 
 netmhcpan:
-  enabled: true
+  enabled: false
   executable: netMHCpan
   el_rank_threshold: 2.0
   deduplicate: true
 
 combine:
   enabled: true
+  sequence_column: aa_sequence
+  variant_id_column: gene_id
   library: data/input/libraries/VR4/VR4_v1_library.csv
   variable_region_start: 450
   variable_region_end: 470
