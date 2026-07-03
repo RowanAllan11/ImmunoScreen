@@ -23,10 +23,10 @@ def main() -> int:
     ap.add_argument("--outdir", type=Path, default=REPO_ROOT / "data/output/combined")
 
     ap.add_argument("--variant-id-col", default="variant_id")
-    ap.add_argument("--library-id-col", default="Geneid")
-    ap.add_argument("--seq-col", default="twist_seq_prot")
-    ap.add_argument("--var-start", type=int, default=8)
-    ap.add_argument("--var-end", type=int, default=24)
+    ap.add_argument("--library-id-col", default=None)
+    ap.add_argument("--seq-col", default=None)
+    ap.add_argument("--var-start", type=int, default=None)
+    ap.add_argument("--var-end", type=int, default=None)
     ap.add_argument("--wt-vr", default=None)
 
     args = ap.parse_args()

@@ -48,7 +48,7 @@ netmhcpan:
 combine:
   enabled: true
   sequence_column: aa_sequence
-  variant_id_column: gene_id
+  library_id_column: gene_id
   library: data/input/libraries/VR4/VR4_v1_library.csv
   variable_region_start: 450
   variable_region_end: 470
