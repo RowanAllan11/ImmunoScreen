@@ -21,14 +21,14 @@ import statsmodels.api as sm
 # Configuration
 # ------------------------------------------------------------------
 
-TISSUE_FILE = Path("data/input/expression/spleen_relative_to_virus_fold_1.csv")
+TISSUE_FILE = Path("data/input/expression/liver_relative_to_virus_fold_1.csv")
 
 IMMUNOGENICITY_FILE = Path(
-    "data/output/variant_immunogenicity_scores/VR5_V3__k9/"
+    "data/output/variant_immunogenicity_scores/VR5_V3_K9_H2-Dd/"
     "variant_immunogenicity_scores.tsv"
 )
 
-OUTPUT_DIR = Path("data/output/tissue_expression_analysis/VR5_V3__k9/spleen")
+OUTPUT_DIR = Path("data/output/tissue_expression_analysis/VR5_V3_K9_H2-Dd/liver")
 SCATTER_DIR = OUTPUT_DIR / "immunogenicity_scatter_plots"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
