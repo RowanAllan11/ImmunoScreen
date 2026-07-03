@@ -173,8 +173,6 @@ def run_combination(
         ),
         "--variant-id-col",
         settings["variant_id_column"],
-        "--library-id-col",
-        settings["library_id_column"],
         "--seq-col",
         settings["sequence_column"],
         "--i",
