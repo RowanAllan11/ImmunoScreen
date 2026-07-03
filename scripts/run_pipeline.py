@@ -41,6 +41,10 @@ def run_fragmentation(
         settings["input_type"],
         "--i",
         settings["input"],
+        "--sequence-col",
+        settings["sequence_column"],
+        "--id-col",
+        settings["variant_id_column"],
         "--kmers",
         *map(str, settings["kmers"]),
     ]
