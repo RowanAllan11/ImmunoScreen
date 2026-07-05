@@ -1,5 +1,5 @@
 run:
-  tag: WT_vr4
+  tag: WT_vr6
   output_root: data/output
   overwrite: true
 

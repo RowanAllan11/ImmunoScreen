@@ -22,7 +22,7 @@ import pandas as pd
 # ------------------------------------------------------------------
 
 INPUT_FILE = Path(
-    "data/output/bigmhc/VR4__k9/predictions_mapped.tsv"
+    "data/output/bigmhc/VR6__k9/predictions_mapped.tsv"
 )
 
 OUTPUT_ROOT = Path(
