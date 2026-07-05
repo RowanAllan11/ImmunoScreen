@@ -1,15 +1,15 @@
 run:
-  tag: VR4
+  tag: WT_vr4
   output_root: data/output
   overwrite: true
 
 fragmentation:
   enabled: true
   input_type: csv
-  input: data/input/libraries/VR4/VR4_v1_library.csv
+  input: data/input/libraries/WT/AAV9_WT.csv
 
-  sequence_column: aa_sequence
-  variant_id_column: gene_id
+  sequence_column: twist_seq_prot
+  variant_id_column: Geneid
   metadata_columns:
     - criteria
 
@@ -18,8 +18,8 @@ fragmentation:
 
   variable_region:
     enabled: true
-    start: 450
-    end: 470
+    start: 525
+    end: 542
     mode: overlap
 
 mhc:
@@ -47,11 +47,11 @@ netmhcpan:
 
 combine:
   enabled: true
-  sequence_column: aa_sequence
-  library_id_column: gene_id
-  library: data/input/libraries/VR4/VR4_v1_library.csv
-  variable_region_start: 450
-  variable_region_end: 470
+  sequence_column: twist_seq_prot
+  library_id_column: Geneid
+  library: data/input/libraries/WT/AAV9_WT.csv
+  variable_region_start: 525
+  variable_region_end: 542
   wild_type_variable_region: TINGSGQNQQTLKFSVAGPSN
 
 bigmhc:
