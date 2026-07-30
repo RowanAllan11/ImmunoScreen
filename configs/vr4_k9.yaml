@@ -29,7 +29,7 @@ mhc:
       mhcflurry: H2-D*b
       netmhcpan: H-2-Db
 
-    - name: H2-Kb
+    - name: H2-Db
       mhcflurry: H2-D*d
       netmhcpan: H-2-Dd
 

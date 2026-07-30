@@ -30,7 +30,7 @@ import pandas as pd
 # ------------------------------------------------------------------
 
 INPUT_FILE = Path(
-    "data/output/bigmhc/VR6__k9/predictions_mapped.tsv"
+    "data/output/bigmhc/VR5_V3__k9/predictions_mapped.tsv"
 )
 
 # Set to None if you do not want WT-relative columns.
@@ -38,7 +38,7 @@ INPUT_FILE = Path(
 #   data/output/bigmhc/WT_vr5__k9/predictions_mapped.tsv
 #   data/output/bigmhc/WT_vr6__k9/predictions_mapped.tsv
 WT_INPUT_FILE: Path | None = Path(
-    "data/output/bigmhc/WT_vr6__k9/predictions_mapped.tsv"
+    "data/output/bigmhc/WT_vr5__k9/predictions_mapped.tsv"
 )
 
 OUTPUT_ROOT = Path(

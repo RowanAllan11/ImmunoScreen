@@ -145,5 +145,5 @@ BigMHC immunogenicity scoring
       ↓
 Final candidate epitope table
       ↓
-Analysis ......
+Variant level immunogenicity scoring
 ```
