@@ -10,7 +10,7 @@ import pandas as pd
 """
 Two types of input sources for fragmentation:
 1. FASTA file e.g. AAV1_VP1.fasta
-2. Tabular file of AAV variant libraries e.g. VR5_v3_final_library_detailed.tsv with columns: Geneid,twist_seq,twist_seq_prot,criteria,evo_score_label,evo_score
+2. Tabular file of AAV variant libraries with ID, protein-sequence, and optional metadata columns.
 """
 
 def read_fasta(path: Union[str, Path]) -> List[Tuple[str, str, str]]:
@@ -104,6 +104,11 @@ def _ensure_parent(p: Path) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _quote_sqlite_identifier(value: str) -> str:
+    """Quote a SQLite identifier without changing its TSV column name."""
+    return '"' + str(value).replace('"', '""') + '"'
+
+
 def _open_db(db_path: Path) -> sqlite3.Connection:
     _ensure_parent(db_path)
     con = sqlite3.connect(str(db_path))
@@ -171,6 +176,12 @@ def fragment_to_tables(
     peptide_variant_map_path = out_dir / "peptide_variant_map.tsv"
     db_path = out_dir / ".fragment_dedup.sqlite"
 
+    # The SQLite file is a per-run scratch index, not an incremental cache.
+    # Reusing it causes peptide occurrence counts and variant mappings to
+    # accumulate across reruns even though the TSV outputs are overwritten.
+    if db_path.exists():
+        db_path.unlink()
+
     con = _open_db(db_path)
     cur = con.cursor()
 
@@ -186,7 +197,9 @@ def fragment_to_tables(
         """
     )
 
-    md_cols_sql = ", ".join([f"{c} TEXT" for c in metadata_cols])
+    md_cols_sql = ", ".join(
+        f"{_quote_sqlite_identifier(c)} TEXT" for c in metadata_cols
+    )
     if md_cols_sql:
         md_cols_sql = ", " + md_cols_sql
 
@@ -290,7 +303,10 @@ def fragment_to_tables(
     with peptide_variant_map_path.open("w", encoding="utf-8") as pm:
         pm.write("\t".join(["peptide_id", "variant_id", "start", "end", *metadata_cols]) + "\n")
         cols = ["peptide_id", "variant_id", "start", "end"] + list(metadata_cols)
-        for row in con.execute(f"SELECT {', '.join(cols)} FROM pep_map ORDER BY peptide_id"):
+        selected_columns = ", ".join(_quote_sqlite_identifier(c) for c in cols)
+        for row in con.execute(
+            f"SELECT {selected_columns} FROM pep_map ORDER BY peptide_id"
+        ):
             pm.write("\t".join([str(x) if x is not None else "" for x in row]) + "\n")
 
     con.close()

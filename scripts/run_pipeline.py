@@ -19,7 +19,7 @@ from src.config import (
 def run_command(command: list[str]) -> None:
     print("\nRunning:")
     print(" ".join(command))
-    subprocess.run(command, check=True)
+    subprocess.run(command, cwd=REPO_ROOT, check=True)
 
 
 def run_fragmentation(
@@ -47,6 +47,8 @@ def run_fragmentation(
         settings["variant_id_column"],
         "--kmers",
         *map(str, settings["kmers"]),
+        "--out-dir",
+        str(Path(config["run"]["output_root"]) / "fragmentation"),
     ]
 
     variable_region = settings.get("variable_region", {})
@@ -132,6 +134,8 @@ def run_netmhcpan(
         *map(str, config["fragmentation"]["kmers"]),
         "--el-rank-threshold",
         str(settings["el_rank_threshold"]),
+        "--netmhcpan",
+        str(settings.get("executable", "netMHCpan")),
         "--outdir",
         str(output_root / "netmhcpan"),
     ]
@@ -190,41 +194,6 @@ def run_combination(
     run_command(command)
 
 
-def run_bigmhc(
-    config: dict[str, Any],
-    run_label: str,
-) -> None:
-    settings = config["bigmhc"]
-
-    if not settings.get("enabled", True):
-        print("Skipping BigMHC.")
-        return
-
-    output_root = Path(config["run"]["output_root"])
-
-    command = [
-        sys.executable,
-        "scripts/run_bigmhc.py",
-        "--i",
-        str(
-            output_root
-            / "combined"
-            / run_label
-            / "combined_annotated.tsv"
-        ),
-        "--m",
-        settings["model"],
-        "--t",
-        str(settings["threads"]),
-        "--d",
-        settings["device"],
-        "--outdir",
-        str(output_root / "bigmhc"),
-    ]
-
-    run_command(command)
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run the complete AAV epitope pipeline."
@@ -254,16 +223,9 @@ def main() -> int:
     run_mhcflurry(config, run_label)
     run_netmhcpan(config, run_label)
     run_combination(config, run_label)
-    run_bigmhc(config, run_label)
-
     print(f"\nPipeline complete: {run_label}")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-"""
-Command to run the pipeline:
-python scripts/run_pipeline.py --config config/vr5_v3_k9.yaml
-"""

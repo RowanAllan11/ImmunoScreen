@@ -27,7 +27,7 @@ def main() -> int:
     ap.add_argument(
         "--tag",
         required=True,
-        help="Initial run tag used in output naming, e.g. AAV9, VR5_V3, VP1.",
+        help="Initial run tag used in output naming, e.g. AAV9, VR4, VR6.",
     )
 
     ap.add_argument("--i", type=Path, required=False, default=None, help="Input path")
@@ -130,15 +130,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-"""
-python scripts/run_fragmentation.py \
-  --tag VR5_V3 \
-  --input-type csv \
-  --i data/input/libraries/VR5_v3_final_library_detailed.csv \
-  --var-only \
-  --var-start 8 \
-  --var-end 24 \
-  --kmers 9
-"""

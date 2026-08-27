@@ -391,13 +391,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-"""
-python -m scripts.run_netmhcpan_pipeline \
-  --peptides data/output/fragmentation/VR5_V3__k9/unique_peptides.tsv \
-  --peptide-map data/output/fragmentation/VR5_V3__k9/peptide_variant_map.tsv \
-  --alleles H-2-Db H-2-Kb \
-  --kmers 9 \
-  --el-rank-threshold 2.0 \
-  --dedup
-"""

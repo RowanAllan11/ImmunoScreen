@@ -44,7 +44,7 @@ def make_run_label(tag: str, kmers: Sequence[int]) -> str:
     Standard run label used across the pipeline.
 
     Example:
-      VR5_V3__k9
-      VR5_V3__k8-15
+      VR6__k9
+      VR6__k8-15
     """
     return f"{clean_label(tag)}__{format_kmer_label(kmers)}"

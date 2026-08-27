@@ -1,149 +1,182 @@
-# AAV TCR Epitope Identification Pipeline
+# ImmunoScreen
 
-This pipeline identifies canditate immunogenic regions and mutations on input peptides sequence (currently for MHC-I, soon to be Class II.....) by:
+ImmunoScreen predicts peptide presentation from AAV protein libraries. It
+contains two separate workflows:
 
-1) fragmenting sequences into overlapping k-mers,  
-2) scoring peptide presentation with **MHCFlurry** & **netMHCpan**,  
-3) scoring immunogenicity with **bigMHC**  
-4) statisitical analysis of variant specific mutations and tissue expression modelling
+- **MHC-I:** fragmentation → MHCflurry → netMHCpan → combine and annotate
+- **MHC-II:** fragmentation → netMHCIIpan → annotate
 
----
+Pipeline behavior is controlled through the YAML files in `configs/`. These
+files let you change the input library and column names, fragmentation k-mer
+size, variable-region coordinates and overlap mode, MHC alleles, predictor
+executable paths, binding-rank thresholds, output location, and which pipeline
+stages are enabled.
 
-## Repository structure
+The included configurations cover the VR4 and VR6 libraries and their
+corresponding wild-type sequences.
+
+## Overview
+
+![ImmunoScreen MHC-I and MHC-II workflow](docs/immunoscreen.drawio.png)
+
+## Repository layout
 
 ```text
-aav-tcr-epitope-pipeline/
-├── configs/
-│   ├── (library specific) .yaml
-├── src/
-│   ├── fragmentation.py                 
-│   ├── mhcflurry.py    
-│   ├── netmhcpan.py.py
-│   ├── combine_predictions.py
-│   ├── mutation_label.py
-│   └── bigmhc.py
-├── scripts/
-│   ├── run_fragmentation.py
-│   ├── run_netmhcpan_pipeline.py
-│   ├── run_mhcflurry_pipeline.py
-│   ├── combine_annotation.py
-│   └── run_bigmhc.py
-├── analysis/
-│   └── in progess .........        
-├── data/
-│   ├── input/
-│   │   ├── libraries/              # place input VR libraries here
-│   │   ├── expression/             # place tissue expression datasets here
-│   │   └── README.md               
-│   └── output/
-│       ├── fragmentation/          # fragmentation TSV outputs - all, unique and mapping information
-│       ├── mhcflurry/              # mhcflurry prediction TSVs
-│       ├── mhcflurry_filtered/     # mhcflurry epitopes which passed minimum threshold
-│       ├── netmhcpan/              # netmhcpan predictions
-│       ├── netmhcpan_filtered/     # netmhcpan epitopes which passed minimum threshold 
-│       └── combined                # final output dataframe 
-├── environment.yml            
-└── README.md
+configs/       VR4, VR6, and wild-type pipeline configurations
+src/           Reusable pipeline implementation
+scripts/       Pipeline entry points and individual-stage commands
+tests/         Tests that do not require the external DTU predictors
+data/input/    Local input libraries
+data/output/   Generated pipeline outputs
+tools/         Local netMHCpan and netMHCIIpan installations
 ```
 
----
+## Requirements
 
-## Setup
+- Conda or Mamba
+- netMHCpan 4.2 for the MHC-I workflow
+- netMHCIIpan 4.3 for the MHC-II workflow
 
-### 1) Create/activate the conda environment
+The DTU predictors are licensed separately and must be downloaded and installed
+by each user.
+
+## Environment setup
+
+Create and activate the project environment:
 
 ```bash
 mamba env create -f environment.yml
 mamba activate AAV
 ```
-### 2) Install Immunogenicity Tools
 
-mhcFlurry:
+Download the MHCflurry model data:
 
 ```bash
-pip install mhcflurry
-export MHCFLURRY_DATA_DIR="/set/direc/"
 mhcflurry-downloads fetch
 ```
 
-bigMHC:
+Install the DTU predictors at the paths used by the included configurations:
 
-```bash
-mkdir tools
-cd tools
-git clone https://github.com/karchinlab/bigmhc.git
+```text
+tools/netMHCpan-4.2/netMHCpan
+tools/netMHCIIpan-4.3/netMHCIIpan
 ```
 
-Install netMHCpan-4.2 from website:
+Change the corresponding `executable` value in the YAML configuration.
 
-https://services.healthtech.dtu.dk/services/NetMHCpan-4.2/
+## Input libraries
 
----
+Place the library files at the paths referenced by the configurations:
 
-## Running the Pipeline
+```text
+data/input/libraries/VR4/VR4_v1_library.csv
+data/input/libraries/VR6/VR6_v1_library.csv
+data/input/libraries/WT/AAV9_WT.csv
+```
 
-The pipeline consists of five main stages:
+## Run the MHC-I pipeline
 
-1. fragmentation of input peptide into overlapping kmers
-2. running mhcflurry and filtering epitopes
-3. running netmhcpan and filtering epitopes
-4. combine predictions and annotate variants with mutation labels
-5. running bigmhc and adding immunogenicity scores
-
-### Configuration
-
-Each variant library is controlled by a YAML configuration file stored in ```configs/```
-
-The configuration defines:
-
-- the input library
-- kmer lengths
-- variable-region coordinates
-- MHC alleles
-- tool-specifc settings
-- which stages of the pipeline to run
-
-### Running the pipeline
-
-Run the complete pipeline using:
+Example: Run VR6 and its wild-type reference:
 
 ```bash
 python scripts/run_pipeline.py --config configs/vr6_k9.yaml
+python scripts/run_pipeline.py --config configs/wt_vr6_k9.yaml
 ```
 
-To run individual stages refer to README in ```scripts/```
+### MHC-I outputs
 
-#### Output
-
-The final output is a TSV containing the original combined prediction table plus the selected BigMHC score column:
+For a VR6 run, the main outputs are:
 
 ```text
-data/output/bigmhc/.../
-└── predictions_mapped.tsv
+data/output/
+├── fragmentation/VR6__k9/
+│   ├── all_fragments.tsv
+│   ├── unique_peptides.tsv
+│   └── peptide_variant_map.tsv
+├── mhcflurry/VR6__k9/
+│   ├── input.csv
+│   ├── predictions.tsv
+│   └── predictions_mapped.tsv
+├── netmhcpan/VR6__k9/
+│   ├── raw/
+│   └── predictions_mapped.tsv
+└── combined/VR6__k9/
+    └── combined_annotated.tsv
 ```
 
----
+Important final-table fields include peptide and variant identifiers, window
+coordinates, allele, predictor scores, threshold-pass flags, `VR_sequence`,
+`VR_mutation`, and `peptide_mutation`.
 
-## Typical Workflow
+## Run the MHC-II pipeline
+
+Run VR6 and its wild-type reference:
+
+```bash
+python scripts/run_mhcii_pipeline.py --config configs/vr6_k15_netmhciipan.yaml
+python scripts/run_mhcii_pipeline.py --config configs/wt_vr6_k15_netmhciipan.yaml
+```
+
+### MHC-II outputs
+
+For a VR6 run, the main outputs are:
 
 ```text
-Input sequences
-      ↓
-Fragmentation
-      ↓
-Unique peptide set + peptide-variant map
-      ↓
-MHCflurry prediction      NetMHCpan prediction
-      ↓                         ↓
-Filtered MHCflurry TSV     Filtered NetMHCpan TSV
-      ↓                         ↓
-      Combined peptide-MHC prediction table
-      ↓
-Variable-region mutation annotation
-      ↓
-BigMHC immunogenicity scoring
-      ↓
-Final candidate epitope table
-      ↓
-Variant level immunogenicity scoring
+data/output/
+├── fragmentation/VR6__k15/
+│   ├── all_fragments.tsv
+│   ├── unique_peptides.tsv
+│   └── peptide_variant_map.tsv
+├── netmhciipan/VR6__k15/
+│   ├── raw/
+│   └── predictions_mapped.tsv
+└── netmhciipan_annotated/VR6__k15/
+    └── predictions_mapped_annotated.tsv
 ```
+
+The mapped table includes the predicted binding core, EL score, EL rank, the
+configured EL-rank binder flag, variant mapping, and mutation annotations.
+
+## Variant scoring and mutation analysis
+
+The commands in `analysis/` turn workflow predictions into allele-specific,
+variant-level presentation scores. They support absolute MHC-I scoring,
+WT-relative MHC-I scoring and WT-relative MHC-II scoring.
+
+The mutation framework then fits multivariable one-hot mutation models for each
+allele and score, compares mutation effects across alleles, and evaluates their
+association with hydrophobicity, side-chain charge, residue volume and VR
+position.
+
+See the [analysis guide](analysis/README.md) for input requirements, usage
+examples, configurable outcomes and the generated tables and plots.
+
+## Configuration controls
+
+Each YAML file defines:
+
+- the input library and its ID/sequence columns;
+- peptide length and variable-region coordinates;
+- alleles in each predictor's required notation;
+- predictor executable paths and rank thresholds;
+- output root; and
+- the wild-type variable-region sequence used for annotation.
+
+Individual stages can be skipped by setting their `enabled` value to `false`.
+When skipping an upstream stage, its expected output must already exist at the
+configured output location.
+
+## Citations
+
+If you use ImmunoScreen, cite the prediction methods used in your analysis:
+
+- O'Donnell, T. J., Rubinsteyn, A. and Laserson, U. (2020). MHCflurry 2.0:
+  Improved pan-allele prediction of MHC class I-presented peptides by
+  incorporating antigen processing. *Cell Systems*, 11, 42–48.e7.
+- Nilsson, J. B., Greenbaum, J., Peters, B. and Nielsen, M. (2025).
+  NetMHCpan-4.2: Improved prediction of CD8+ epitopes by use of transfer
+  learning and structural features. *Frontiers in Immunology*, 16, 1616113.
+  [doi:10.3389/fimmu.2025.1616113](https://doi.org/10.3389/fimmu.2025.1616113)
+
+NetMHCpan and NetMHCIIpan are separately licensed DTU software and are not
+distributed with this repository.

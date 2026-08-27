@@ -6,14 +6,10 @@ dependencies:
   - pip
   - pandas
   - numpy
-  - pytorch
-  - scikit-learn
   - matplotlib
+  - biopython
   - pyyaml
-  - psutil
+  - statsmodels
+  - pytest
   - pip:
-      - pytest
       - mhcflurry
-
-
-# Still a wip - needs to be double checked and tested

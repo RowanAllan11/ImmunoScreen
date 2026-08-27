@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +38,6 @@ def validate_config(config: dict[str, Any]) -> None:
         "mhcflurry",
         "netmhcpan",
         "combine",
-        "bigmhc",
     ]
 
     missing = [
@@ -57,6 +55,8 @@ def validate_config(config: dict[str, Any]) -> None:
     run = config["run"]
     if not run.get("tag"):
         raise ConfigError("run.tag must be specified.")
+    if not run.get("output_root"):
+        raise ConfigError("run.output_root must be specified.")
 
     fragmentation = config["fragmentation"]
     kmers = fragmentation.get("kmers")
@@ -69,6 +69,21 @@ def validate_config(config: dict[str, Any]) -> None:
     if any(not isinstance(k, int) or k < 1 for k in kmers):
         raise ConfigError(
             "Every fragmentation.kmers value must be a positive integer."
+        )
+
+    required_fragmentation_fields = {
+        "input_type",
+        "input",
+        "sequence_column",
+        "variant_id_column",
+    }
+    missing_fragmentation_fields = (
+        required_fragmentation_fields - fragmentation.keys()
+    )
+    if missing_fragmentation_fields:
+        raise ConfigError(
+            "fragmentation is missing: "
+            + ", ".join(sorted(missing_fragmentation_fields))
         )
 
     alleles = config["mhc"].get("alleles")
@@ -94,6 +109,32 @@ def validate_config(config: dict[str, Any]) -> None:
                 + ", ".join(sorted(missing_fields))
             )
 
+    combine = config["combine"]
+    required_combine_fields = {
+        "sequence_column",
+        "library_id_column",
+        "library",
+        "variable_region_start",
+        "variable_region_end",
+        "wild_type_variable_region",
+    }
+    missing_combine_fields = required_combine_fields - combine.keys()
+    if missing_combine_fields:
+        raise ConfigError(
+            "combine is missing: "
+            + ", ".join(sorted(missing_combine_fields))
+        )
+
+    if "affinity_percentile_threshold" not in config["mhcflurry"]:
+        raise ConfigError(
+            "mhcflurry.affinity_percentile_threshold must be specified."
+        )
+
+    netmhcpan = config["netmhcpan"]
+    for field in ["executable", "el_rank_threshold"]:
+        if field not in netmhcpan:
+            raise ConfigError(f"netmhcpan.{field} must be specified.")
+
 
 def get_alleles(
     config: dict[str, Any],
@@ -113,18 +154,6 @@ def get_alleles(
         allele[tool]
         for allele in config["mhc"]["alleles"]
     ]
-
-
-def get_allele_name_map(
-    config: dict[str, Any],
-    tool: str,
-) -> dict[str, str]:
-    """Map a tool-specific allele name to the standard internal name."""
-
-    return {
-        allele[tool]: allele["name"]
-        for allele in config["mhc"]["alleles"]
-    }
 
 
 def get_run_label(config: dict[str, Any]) -> str:

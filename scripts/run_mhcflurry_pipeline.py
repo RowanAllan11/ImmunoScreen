@@ -108,12 +108,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-"""
-python scripts/run_mhcflurry_pipeline.py \
-  --peptides data/output/fragmentation/VR5_V3__k9/unique_peptides.tsv \
-  --peptide-map data/output/fragmentation/VR5_V3__k9/peptide_variant_map.tsv \
-  --alleles data/input/alleles/mhcflurry/allele_single.txt \
-  --affinity-percentile-threshold 2.0
-"""

@@ -1,0 +1,42 @@
+run:
+  tag: VR6
+  output_root: data/output
+
+fragmentation:
+  enabled: true
+  input_type: csv
+  input: data/input/libraries/VR6/VR6_v1_library.csv
+  sequence_column: aa_sequence
+  variant_id_column: gene_id
+  metadata_columns:
+    - criteria
+  kmers:
+    - 15
+  variable_region:
+    enabled: true
+    start: 526
+    end: 542
+    mode: overlap
+
+mhc:
+  alleles:
+    - name: H2-IAb
+      netmhciipan: H-2-IAb
+    - name: H2-IAd
+      netmhciipan: H-2-IAd
+    - name: H2-IEd
+      netmhciipan: H-2-IEd
+
+netmhciipan:
+  enabled: true
+  executable: tools/netMHCIIpan-4.3/netMHCIIpan
+  el_rank_binder_threshold: 5.0
+
+annotate:
+  enabled: true
+  library: data/input/libraries/VR6/VR6_v1_library.csv
+  sequence_column: aa_sequence
+  library_id_column: gene_id
+  variable_region_start: 526
+  variable_region_end: 542
+  wild_type_variable_region: SHKEGEDRFFPLSGSLI

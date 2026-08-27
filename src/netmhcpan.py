@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import os
 import subprocess
 from pathlib import Path
@@ -292,8 +291,3 @@ def read_peptide_variant_map_tsv(path: Path) -> pd.DataFrame:
     df["start"] = pd.to_numeric(df["start"], errors="coerce").astype("Int64")
     df["end"] = pd.to_numeric(df["end"], errors="coerce").astype("Int64")
     return df
-
-def infer_kmer_range_from_df(df: pd.DataFrame) -> str:
-    mn = int(pd.to_numeric(df["k"], errors="coerce").min())
-    mx = int(pd.to_numeric(df["k"], errors="coerce").max())
-    return f"{mn}-{mx}mer" if mn != mx else f"{mn}mer"

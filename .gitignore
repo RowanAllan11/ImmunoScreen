@@ -41,6 +41,7 @@ data/output/*
 
 # Misc
 *.tmp
+saved/
 
 # Pipeline outputs (HPC + local)
 data/output/**
